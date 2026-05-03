@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "599901055825",
+    "project_id": "foodni-project",
+    "storage_bucket": "foodni-project.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:599901055825:android:101f7aea155bd135044170",
+        "android_client_info": {
+          "package_name": "com.example.food_ni"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "599901055825-u3im4t71dc6adlvguikbgufduf726bar.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCItn03No4KghKwkfUuScFeVpcm8YkSDBc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "599901055825-u3im4t71dc6adlvguikbgufduf726bar.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
