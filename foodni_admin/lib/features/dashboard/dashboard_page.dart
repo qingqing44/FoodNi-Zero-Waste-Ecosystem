@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/services/auth_service.dart';
 import '../settings/profile_page.dart'; 
 import '../../core/services/dashboard_service.dart';
+import '../users/user_management_page.dart';
 
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
@@ -15,15 +16,17 @@ class _DashboardPageState extends State<DashboardPage> {
   int _selectedIndex = 0; 
 
   Widget _buildBodyContent() {
-    switch (_selectedIndex) {
-      case 0:
-        return _buildHomeStats();
-      case 4:
-        return const ProfileView(); 
-      default:
-        return const Center(child: Text('Module coming soon...'));
-    }
+  switch (_selectedIndex) {
+    case 0:
+      return _buildHomeStats();
+    case 1: 
+      return const UserManagementView();
+    case 4:
+      return const ProfileView();
+    default:
+      return const Center(child: Text('Module coming soon...'));
   }
+}
 
   @override
   Widget build(BuildContext context) {
