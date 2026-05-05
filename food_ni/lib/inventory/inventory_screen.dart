@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'add_item_screen.dart';
 
 class InventoryScreen extends StatelessWidget {
   const InventoryScreen({super.key});
@@ -62,6 +63,8 @@ class InventoryScreen extends StatelessWidget {
               final foodName = data['foodName'] ?? 'Unknown Item';
               final expiryDate = data['expiryDate'] ?? 'Unknown Expiry';
               final storageSuggestion = data['storageSuggestion'];
+              final category = data['category'];
+              final quantity = data['quantity'];
               final imageUrl = data['imageUrl'];
 
               return Card(
@@ -119,6 +122,40 @@ class InventoryScreen extends StatelessWidget {
                                 ),
                               ],
                             ),
+                            if ((category != null && category.toString().isNotEmpty) || 
+                                (quantity != null && quantity.toString().isNotEmpty)) ...[
+                              const SizedBox(height: 8),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 4,
+                                children: [
+                                  if (category != null && category.toString().isNotEmpty)
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFE8F3EF),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: Text(
+                                        category,
+                                        style: const TextStyle(color: Color(0xFF34A853), fontSize: 10, fontWeight: FontWeight.bold),
+                                      ),
+                                    ),
+                                  if (quantity != null && quantity.toString().isNotEmpty)
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFE8F3EF),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: Text(
+                                        quantity,
+                                        style: const TextStyle(color: Color(0xFF34A853), fontSize: 10, fontWeight: FontWeight.bold),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ],
                             if (storageSuggestion != null) ...[
                               const SizedBox(height: 8),
                               Row(
@@ -148,6 +185,16 @@ class InventoryScreen extends StatelessWidget {
             },
           );
         },
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => const AddItemScreen()),
+          );
+        },
+        backgroundColor: const Color(0xFF052A1E),
+        child: const Icon(Icons.add, color: Colors.white),
       ),
     );
   }
