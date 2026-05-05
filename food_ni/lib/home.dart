@@ -1,6 +1,9 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'authentication/profile_screen.dart';
+import 'camera/camera_service.dart';
+import 'camera/details_screen.dart';
+import 'inventory/inventory_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -39,7 +42,7 @@ class HomeScreen extends StatelessWidget {
                       rating: '4.9(124)',
                       tags: ['Zero Waste', 'High Fiber'],
                       authorName: 'Marcus C.',
-                      authorImage: 'https://i.pravatar.cc/150?u=marcus',
+                      authorImage: 'https://ui-avatars.com/api/?name=Marcus+C&background=random',
                       time: '20 min',
                       level: 'Beginner',
                     ),
@@ -50,7 +53,7 @@ class HomeScreen extends StatelessWidget {
                       description: 'The ultimate lazy Sunday meal using only shelf-stable ingredients from your FoodNi inventory.',
                       tags: ['Quick & Easy'],
                       authorName: 'Maya R.',
-                      authorImage: 'https://i.pravatar.cc/150?u=maya',
+                      authorImage: 'https://ui-avatars.com/api/?name=Maya+R&background=random',
                     ),
                     const SizedBox(height: 24),
                     _buildRecipeCard(
@@ -59,7 +62,7 @@ class HomeScreen extends StatelessWidget {
                       description: 'A sustainable twist using fair-trade cocoa and seasonal berry compote.',
                       tags: ['Indulgent'],
                       authorName: 'Alex K.',
-                      authorImage: 'https://i.pravatar.cc/150?u=alex',
+                      authorImage: 'https://ui-avatars.com/api/?name=Alex+K&background=random',
                     ),
                     const SizedBox(height: 24),
 
@@ -77,7 +80,7 @@ class HomeScreen extends StatelessWidget {
                       description: 'Elevate canned chickpeas and olives into an artisan appetizer spread.',
                       tags: ['Party Hit'],
                       authorName: 'Lela J.',
-                      authorImage: 'https://i.pravatar.cc/150?u=lela',
+                      authorImage: 'https://ui-avatars.com/api/?name=Lela+J&background=random',
                     ),
                     const SizedBox(height: 80), // Space for bottom nav
                   ],
@@ -111,7 +114,7 @@ class HomeScreen extends StatelessWidget {
             child: CircleAvatar(
               radius: 18,
               backgroundColor: const Color(0xFFE8F3EF),
-              backgroundImage: NetworkImage(FirebaseAuth.instance.currentUser?.photoURL ?? 'https://i.pravatar.cc/150?u=me'),
+              backgroundImage: NetworkImage(FirebaseAuth.instance.currentUser?.photoURL ?? 'https://ui-avatars.com/api/?name=User&background=random'),
             ),
           ),
         ],
@@ -375,9 +378,11 @@ class HomeScreen extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          _buildNavItem(Icons.inventory_2_outlined, 'INVENTORY', false),
+          _buildNavItem(Icons.inventory_2_outlined, 'INVENTORY', false, onTap: () {
+            Navigator.push(context, MaterialPageRoute(builder: (context) => const InventoryScreen()));
+          }),
           _buildNavItem(Icons.auto_awesome_outlined, 'ASSISTANT', false),
-          _buildScanButton(),
+          _buildScanButton(context),
           _buildNavItem(Icons.group_outlined, 'SOCIAL', true),
           _buildNavItem(Icons.person_outline, 'PROFILE', false, onTap: () {
             Navigator.push(context, MaterialPageRoute(builder: (context) => const MyProfileScreen()));
@@ -387,11 +392,32 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildScanButton() {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: const BoxDecoration(color: Color(0xFF052A1E), shape: BoxShape.circle),
-      child: const Icon(Icons.qr_code_scanner, color: Colors.white, size: 28),
+  Widget _buildScanButton(BuildContext context) {
+    return GestureDetector(
+      onTap: () async {
+        try {
+          final docId = await CameraService().scanFoodItem();
+          if (docId != null && context.mounted) {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => FoodDetailsScreen(docId: docId),
+              ),
+            );
+          }
+        } catch (e) {
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Error: $e')),
+            );
+          }
+        }
+      },
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: const BoxDecoration(color: Color(0xFF052A1E), shape: BoxShape.circle),
+        child: const Icon(Icons.qr_code_scanner, color: Colors.white, size: 28),
+      ),
     );
   }
 

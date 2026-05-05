@@ -23,7 +23,7 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
   
   // Temporary state for editing
   String? _tempAvatarUrl;
-  File? _tempImageFile;
+  XFile? _tempXFile;
   
   final ImagePicker _picker = ImagePicker();
 
@@ -52,7 +52,7 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
       _isEditing = true;
       _nameController.text = user?.displayName ?? '';
       _tempAvatarUrl = _currentAvatarUrl;
-      _tempImageFile = null;
+      _tempXFile = null;
     });
   }
 
@@ -60,7 +60,7 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
     final XFile? pickedFile = await _picker.pickImage(source: ImageSource.gallery);
     if (pickedFile != null) {
       setState(() {
-        _tempImageFile = File(pickedFile.path);
+        _tempXFile = pickedFile;
         _tempAvatarUrl = null;
       });
     }
@@ -72,13 +72,18 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
       String? finalPhotoUrl = _tempAvatarUrl;
 
       // Upload Image to Firebase Storage if new one was picked
-      if (_tempImageFile != null && !kIsWeb) {
+      if (_tempXFile != null) {
         final storageRef = FirebaseStorage.instance
             .ref()
             .child('profile_photos')
             .child('${user!.uid}.jpg');
         
-        await storageRef.putFile(_tempImageFile!);
+        if (kIsWeb) {
+          final bytes = await _tempXFile!.readAsBytes();
+          await storageRef.putData(bytes, SettableMetadata(contentType: 'image/jpeg'));
+        } else {
+          await storageRef.putFile(File(_tempXFile!.path));
+        }
         finalPhotoUrl = await storageRef.getDownloadURL();
       }
 
@@ -96,7 +101,7 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
       if (mounted) {
         setState(() {
           _isEditing = false;
-          _tempImageFile = null;
+          _tempXFile = null;
         });
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Profile updated successfully!')),
@@ -437,7 +442,7 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
             final url = _fixedIcons[index];
             final isSelected = _currentAvatarUrl == url;
             return GestureDetector(
-              onTap: () => setState(() { _tempAvatarUrl = url; _tempImageFile = null; }),
+              onTap: () => setState(() { _tempAvatarUrl = url; _tempXFile = null; }),
               child: Container(
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
@@ -482,7 +487,13 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
 
   ImageProvider? _getProfileImage() {
     if (_isEditing) {
-      if (_tempImageFile != null) return FileImage(_tempImageFile!);
+      if (_tempXFile != null) {
+        if (kIsWeb) {
+          return NetworkImage(_tempXFile!.path);
+        } else {
+          return FileImage(File(_tempXFile!.path));
+        }
+      }
       if (_tempAvatarUrl != null) return NetworkImage(_tempAvatarUrl!);
     } else {
       if (_currentAvatarUrl != null) return NetworkImage(_currentAvatarUrl!);
@@ -532,7 +543,7 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
               backgroundColor: Colors.white,
               child: CircleAvatar(
                 radius: 12,
-                backgroundImage: NetworkImage('https://i.pravatar.cc/150?img=${i + 10}'),
+                backgroundImage: NetworkImage('https://ui-avatars.com/api/?name=User+${i + 1}&background=random'),
               ),
             ),
           ),
