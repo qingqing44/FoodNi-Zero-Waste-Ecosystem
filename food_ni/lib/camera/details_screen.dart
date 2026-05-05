@@ -23,37 +23,16 @@ class FoodDetailsScreen extends StatelessWidget {
           ),
         ),
       ),
-      body: StreamBuilder<DocumentSnapshot>(
-        stream: FirebaseFirestore.instance
-            .collection('image_processing_queue')
-            .doc(docId)
-            .snapshots(),
-        builder: (context, snapshot) {
-          if (snapshot.hasError) {
-            return Center(child: Text('Error: ${snapshot.error}'));
-          }
-
-          if (snapshot.connectionState == ConnectionState.waiting || !snapshot.hasData) {
-            return _buildLoadingState();
-          }
-
-          final data = snapshot.data!.data() as Map<String, dynamic>?;
-
-          if (data == null) {
-            return const Center(child: Text("Document not found"));
-          }
-
-          final status = data['status'];
-
-          if (status == 'pending') {
-            return _buildLoadingState();
-          } else if (status == 'error') {
-            return Center(child: Text('Error processing image: ${data['errorMessage']}'));
-          }
-
-          // Status is 'completed'
-          return _buildDetails(context, data, snapshot.data!.reference);
+      body: _buildDetails(
+        context,
+        {
+          'foodName': 'Fresh Strawberries (Mock)',
+          'expiryDate': '3-4 Days',
+          'storageSuggestion': 'Keep in the original container or a breathable container in the crisper drawer of your fridge. Do not wash until ready to eat.',
+          'imageUrl': 'https://images.unsplash.com/photo-1464965911861-746a04b4bca6?auto=format&fit=crop&q=80&w=800',
+          'userId': FirebaseAuth.instance.currentUser?.uid ?? 'test_user',
         },
+        null, // No document reference for mock mode
       ),
     );
   }
@@ -86,7 +65,7 @@ class FoodDetailsScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildDetails(BuildContext context, Map<String, dynamic> data, DocumentReference docRef) {
+  Widget _buildDetails(BuildContext context, Map<String, dynamic> data, DocumentReference? docRef) {
     final foodName = data['foodName'] ?? 'Unknown Item';
     final expiryDate = data['expiryDate'] ?? 'Unknown Expiry';
     final storageSuggestion = data['storageSuggestion'] ?? 'No suggestion available.';
@@ -140,7 +119,9 @@ class FoodDetailsScreen extends StatelessWidget {
                 child: OutlinedButton(
                   onPressed: () {
                     // Delete the queue item and go back
-                    docRef.delete();
+                    if (docRef != null) {
+                      docRef.delete();
+                    }
                     Navigator.pop(context);
                   },
                   style: OutlinedButton.styleFrom(
@@ -174,7 +155,9 @@ class FoodDetailsScreen extends StatelessWidget {
                       'captureDate': FieldValue.serverTimestamp(),
                       'source': 'gemini'
                     });
-                    await docRef.delete();
+                    if (docRef != null) {
+                      await docRef.delete();
+                    }
                     if (context.mounted) {
                       Navigator.pop(context);
                       ScaffoldMessenger.of(context).showSnackBar(

@@ -395,18 +395,33 @@ class HomeScreen extends StatelessWidget {
   Widget _buildScanButton(BuildContext context) {
     return GestureDetector(
       onTap: () async {
+        // Show a loading dialog immediately
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => const Center(
+            child: CircularProgressIndicator(color: Color(0xFF34A853)),
+          ),
+        );
+
         try {
           final docId = await CameraService().scanFoodItem();
-          if (docId != null && context.mounted) {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => FoodDetailsScreen(docId: docId),
-              ),
-            );
+          
+          if (context.mounted) {
+            Navigator.pop(context); // Close the loading dialog
+            
+            if (docId != null) {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => FoodDetailsScreen(docId: docId),
+                ),
+              );
+            }
           }
         } catch (e) {
           if (context.mounted) {
+            Navigator.pop(context); // Close the loading dialog
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(content: Text('Error: $e')),
             );

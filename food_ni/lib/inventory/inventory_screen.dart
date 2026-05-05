@@ -32,7 +32,6 @@ class InventoryScreen extends StatelessWidget {
         stream: FirebaseFirestore.instance
             .collection('foodItems')
             .where('userId', isEqualTo: user.uid)
-            .orderBy('captureDate', descending: true)
             .snapshots(),
         builder: (context, snapshot) {
           if (snapshot.hasError) {
