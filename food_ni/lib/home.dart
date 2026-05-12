@@ -405,16 +405,16 @@ class HomeScreen extends StatelessWidget {
         );
 
         try {
-          final docId = await CameraService().scanFoodItem();
+          final foodData = await CameraService().scanFoodItem();
           
           if (context.mounted) {
             Navigator.pop(context); // Close the loading dialog
             
-            if (docId != null) {
+            if (foodData != null) {
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (context) => FoodDetailsScreen(docId: docId),
+                  builder: (context) => FoodDetailsScreen(foodData: foodData),
                 ),
               );
             }

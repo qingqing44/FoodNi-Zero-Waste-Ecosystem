@@ -1,11 +1,11 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+
 import 'package:flutter/material.dart';
 
 class FoodDetailsScreen extends StatelessWidget {
-  final String docId;
+  final Map<String, dynamic> foodData;
 
-  const FoodDetailsScreen({super.key, required this.docId});
+  const FoodDetailsScreen({super.key, required this.foodData});
 
   @override
   Widget build(BuildContext context) {
@@ -25,14 +25,8 @@ class FoodDetailsScreen extends StatelessWidget {
       ),
       body: _buildDetails(
         context,
-        {
-          'foodName': 'Fresh Strawberries (Mock)',
-          'expiryDate': '3-4 Days',
-          'storageSuggestion': 'Keep in the original container or a breathable container in the crisper drawer of your fridge. Do not wash until ready to eat.',
-          'imageUrl': 'https://images.unsplash.com/photo-1464965911861-746a04b4bca6?auto=format&fit=crop&q=80&w=800',
-          'userId': FirebaseAuth.instance.currentUser?.uid ?? 'test_user',
-        },
-        null, // No document reference for mock mode
+        foodData,
+        null, // No document reference since we use direct API call
       ),
     );
   }
