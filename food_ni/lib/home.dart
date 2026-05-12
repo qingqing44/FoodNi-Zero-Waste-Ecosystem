@@ -4,6 +4,7 @@ import 'authentication/profile_screen.dart';
 import 'camera/camera_service.dart';
 import 'camera/details_screen.dart';
 import 'inventory/inventory_screen.dart';
+import 'assistant/assistant_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -57,7 +58,7 @@ class HomeScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 24),
                     _buildRecipeCard(
-                      image: 'https://images.unsplash.com/photo-1541920443742-6fe179cd5092?auto=format&fit=crop&q=80&w=800',
+                      image: 'https://images.unsplash.com/photo-1606890737304-57a1ca8a5b62?auto=format&fit=crop&q=80&w=800',
                       title: 'Dark Choco Lava Cake',
                       description: 'A sustainable twist using fair-trade cocoa and seasonal berry compote.',
                       tags: ['Indulgent'],
@@ -381,7 +382,9 @@ class HomeScreen extends StatelessWidget {
           _buildNavItem(Icons.inventory_2_outlined, 'INVENTORY', false, onTap: () {
             Navigator.push(context, MaterialPageRoute(builder: (context) => const InventoryScreen()));
           }),
-          _buildNavItem(Icons.auto_awesome_outlined, 'ASSISTANT', false),
+          _buildNavItem(Icons.auto_awesome_outlined, 'ASSISTANT', false, onTap: () {
+            Navigator.push(context, MaterialPageRoute(builder: (context) => const AssistantScreen()));
+          }),
           _buildScanButton(context),
           _buildNavItem(Icons.group_outlined, 'SOCIAL', true),
           _buildNavItem(Icons.person_outline, 'PROFILE', false, onTap: () {
