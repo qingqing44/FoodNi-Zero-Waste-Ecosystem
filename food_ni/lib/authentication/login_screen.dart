@@ -1,7 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import '../main.dart'; // To access clientId
 import 'register_screen.dart';
 
@@ -152,7 +152,9 @@ class _LoginScreenState extends State<LoginScreen> {
         googleProvider.setCustomParameters({'prompt': 'select_account'});
         await FirebaseAuth.instance.signInWithPopup(googleProvider);
       } else {
-        final GoogleSignIn googleSignIn = GoogleSignIn(clientId: clientId);
+        final GoogleSignIn googleSignIn = defaultTargetPlatform == TargetPlatform.android
+            ? GoogleSignIn()
+            : GoogleSignIn(clientId: clientId);
         await googleSignIn.signOut();
         final GoogleSignInAccount? googleUser = await googleSignIn.signIn();
         
