@@ -67,6 +67,8 @@ class CameraService {
     final XFile? picked = await _picker.pickImage(
       source: source,
       imageQuality: 90,
+      maxWidth: 1024,
+      maxHeight: 1024,
     );
     if (picked == null) return null; // User cancelled
 
@@ -107,21 +109,39 @@ class CameraService {
   /// Sends [imageBytes] to the Gemini vision model and returns parsed JSON.
   /// Uses firebase_ai to securely communicate with Gemini using Firebase config.
   Future<Map<String, dynamic>> _analyseWithGemini(Uint8List imageBytes) async {
-    final model = FirebaseAI.googleAI().generativeModel(
-      model: 'gemini-3.5-flash',
-      generationConfig: GenerationConfig(responseMimeType: 'application/json'),
-    );
+    const candidateModels = [
+      'gemini-3.5-flash',
+      'gemini-2.5-flash',
+      'gemini-2.5-flash-lite',
+    ];
 
-    late final GenerateContentResponse response;
-    try {
-      response = await model.generateContent([
-        Content.multi([
-          InlineDataPart('image/jpeg', imageBytes),
-          TextPart(_kGeminiPrompt),
-        ]),
-      ]);
-    } catch (e) {
-      throw Exception('Gemini API request failed: $e');
+    GenerateContentResponse? response;
+    String? lastError;
+
+    for (final modelName in candidateModels) {
+      try {
+        final model = FirebaseAI.googleAI().generativeModel(
+          model: modelName,
+          generationConfig: GenerationConfig(responseMimeType: 'application/json'),
+        );
+
+        response = await model.generateContent([
+          Content.multi([
+            InlineDataPart('image/jpeg', imageBytes),
+            TextPart(_kGeminiPrompt),
+          ]),
+        ]);
+        break; // Success
+      } catch (e) {
+        lastError = e.toString();
+        // If it's a server error (e.g. 500 high demand), we try the next model.
+        // If it's something else we might still want to try the next model just in case.
+        continue;
+      }
+    }
+
+    if (response == null) {
+      throw Exception('All Gemini models failed. Last error: $lastError');
     }
 
     final rawText = response.text;
