@@ -1,11 +1,12 @@
 import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:path/path.dart' as p;
 
 class AddItemScreen extends StatefulWidget {
   const AddItemScreen({super.key});
@@ -131,20 +132,19 @@ class _AddItemScreenState extends State<AddItemScreen> {
 
       String? downloadUrl;
 
-      // Upload image if selected
+      // Save image locally if selected
       if (_selectedImage != null) {
-        final timestamp = DateTime.now().millisecondsSinceEpoch;
-        final storagePath = 'users/${user.uid}/food_images/$timestamp.jpg';
-        final ref = FirebaseStorage.instance.ref().child(storagePath);
-        
         if (kIsWeb) {
-          final bytes = await _selectedImage!.readAsBytes();
-          final uploadTask = await ref.putData(bytes, SettableMetadata(contentType: 'image/jpeg'));
-          downloadUrl = await uploadTask.ref.getDownloadURL();
+          // On web just use the temp path
+          downloadUrl = _selectedImage!.path;
         } else {
-          final file = File(_selectedImage!.path);
-          final uploadTask = await ref.putFile(file);
-          downloadUrl = await uploadTask.ref.getDownloadURL();
+          final appDir = await getApplicationDocumentsDirectory();
+          final foodDir = Directory(p.join(appDir.path, 'food_images'));
+          if (!await foodDir.exists()) await foodDir.create(recursive: true);
+          final timestamp = DateTime.now().millisecondsSinceEpoch;
+          final destPath = p.join(foodDir.path, 'food_$timestamp.jpg');
+          await File(_selectedImage!.path).copy(destPath);
+          downloadUrl = destPath;
         }
       }
 
@@ -223,7 +223,7 @@ class _AddItemScreenState extends State<AddItemScreen> {
                             border: Border.all(color: const Color(0xFFF0F0F0)),
                             boxShadow: [
                               BoxShadow(
-                                color: Colors.black.withOpacity(0.05),
+                              color: Colors.black.withValues(alpha: 0.05),
                                 blurRadius: 10,
                                 offset: const Offset(0, 4),
                               )

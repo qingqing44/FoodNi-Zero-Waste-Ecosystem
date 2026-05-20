@@ -1,9 +1,11 @@
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:path_provider/path_provider.dart';
+import 'package:path/path.dart' as p;
 
 class MyProfileScreen extends StatefulWidget {
   const MyProfileScreen({super.key});
@@ -71,20 +73,21 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
     try {
       String? finalPhotoUrl = _tempAvatarUrl;
 
-      // Upload Image to Firebase Storage if new one was picked
+      // Save image locally if a new one was picked
       if (_tempXFile != null) {
-        final storageRef = FirebaseStorage.instance
-            .ref()
-            .child('profile_photos')
-            .child('${user!.uid}.jpg');
-        
         if (kIsWeb) {
-          final bytes = await _tempXFile!.readAsBytes();
-          await storageRef.putData(bytes, SettableMetadata(contentType: 'image/jpeg'));
+          // On web, use a data URL
+          final Uint8List bytes = await _tempXFile!.readAsBytes();
+          finalPhotoUrl = Uri.dataFromBytes(bytes, mimeType: 'image/jpeg').toString();
         } else {
-          await storageRef.putFile(File(_tempXFile!.path));
+          // On mobile, copy to app documents directory
+          final appDir = await getApplicationDocumentsDirectory();
+          final profileDir = Directory(p.join(appDir.path, 'profile_photos'));
+          if (!await profileDir.exists()) await profileDir.create(recursive: true);
+          final destPath = p.join(profileDir.path, '${user!.uid}.jpg');
+          await File(_tempXFile!.path).copy(destPath);
+          finalPhotoUrl = destPath;
         }
-        finalPhotoUrl = await storageRef.getDownloadURL();
       }
 
       // Update Firebase Auth Profile
@@ -183,7 +186,7 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
                       border: Border.all(color: Colors.white, width: 4),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.05),
+                          color: Colors.black.withValues(alpha: 0.05),
                           blurRadius: 10,
                           offset: const Offset(0, 4),
                         ),
@@ -494,9 +497,19 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
           return FileImage(File(_tempXFile!.path));
         }
       }
-      if (_tempAvatarUrl != null) return NetworkImage(_tempAvatarUrl!);
+      if (_tempAvatarUrl != null) {
+        if (_tempAvatarUrl!.startsWith('/') || _tempAvatarUrl!.startsWith('C:')) {
+          return FileImage(File(_tempAvatarUrl!));
+        }
+        return NetworkImage(_tempAvatarUrl!);
+      }
     } else {
-      if (_currentAvatarUrl != null) return NetworkImage(_currentAvatarUrl!);
+      if (_currentAvatarUrl != null) {
+        if (!kIsWeb && !_currentAvatarUrl!.startsWith('http') && !_currentAvatarUrl!.startsWith('data:')) {
+          return FileImage(File(_currentAvatarUrl!));
+        }
+        return NetworkImage(_currentAvatarUrl!);
+      }
     }
     return null;
   }
@@ -516,7 +529,7 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
           const SizedBox(height: 12),
           Text(value, style: TextStyle(color: textColor, fontSize: 20, fontWeight: FontWeight.bold)),
           const SizedBox(height: 4),
-          Text(label, style: TextStyle(color: textColor.withOpacity(0.7), fontSize: 11)),
+          Text(label, style: TextStyle(color: textColor.withValues(alpha: 0.7), fontSize: 11)),
         ],
       ),
     );

@@ -43,3 +43,11 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Environment / secrets – NEVER commit these
+.env
+*.env
+
+# Local debug/utility scripts
+list_models.dart
+list_models_io.dart

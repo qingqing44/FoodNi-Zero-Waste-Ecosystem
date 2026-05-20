@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:google_generative_ai/google_generative_ai.dart';
-
+import 'package:firebase_ai/firebase_ai.dart';
 class AssistantScreen extends StatefulWidget {
   const AssistantScreen({super.key});
 
@@ -28,15 +26,8 @@ class _AssistantScreenState extends State<AssistantScreen> {
   }
 
   void _initializeChat() {
-    final apiKey = dotenv.env['GEMINI_API_KEY'];
-    if (apiKey == null || apiKey.isEmpty) {
-      _messages.add(ChatMessage(text: 'Error: API Key not found.', isUser: false));
-      return;
-    }
-
-    final model = GenerativeModel(
-      model: 'gemini-1.5-flash',
-      apiKey: apiKey,
+    final model = FirebaseAI.googleAI().generativeModel(
+      model: 'gemini-3.5-flash',
       systemInstruction: Content.system('You are the FoodNi AI assistant. You must only answer questions related to food, recipes, cooking, pantry management, and zero-waste sustainability. If a user asks about anything else, politely decline and steer the conversation back to food or cooking.'),
     );
 
@@ -139,7 +130,7 @@ class _AssistantScreenState extends State<AssistantScreen> {
           boxShadow: [
             if (!isUser)
               BoxShadow(
-                color: Colors.black.withOpacity(0.05),
+                color: Colors.black.withValues(alpha: 0.05),
                 blurRadius: 5,
                 offset: const Offset(0, 2),
               ),

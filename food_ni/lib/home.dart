@@ -1,5 +1,6 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'authentication/profile_screen.dart';
 import 'camera/camera_service.dart';
 import 'camera/details_screen.dart';
@@ -397,47 +398,125 @@ class HomeScreen extends StatelessWidget {
 
   Widget _buildScanButton(BuildContext context) {
     return GestureDetector(
-      onTap: () async {
-        // Show a loading dialog immediately
-        showDialog(
-          context: context,
-          barrierDismissible: false,
-          builder: (context) => const Center(
-            child: CircularProgressIndicator(color: Color(0xFF34A853)),
-          ),
-        );
-
-        try {
-          final foodData = await CameraService().scanFoodItem();
-          
-          if (context.mounted) {
-            Navigator.pop(context); // Close the loading dialog
-            
-            if (foodData != null) {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => FoodDetailsScreen(foodData: foodData),
-                ),
-              );
-            }
-          }
-        } catch (e) {
-          if (context.mounted) {
-            Navigator.pop(context); // Close the loading dialog
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('Error: $e')),
-            );
-          }
-        }
-      },
+      onTap: () => _onScanTap(context),
       child: Container(
         padding: const EdgeInsets.all(12),
-        decoration: const BoxDecoration(color: Color(0xFF052A1E), shape: BoxShape.circle),
+        decoration: const BoxDecoration(
+            color: Color(0xFF052A1E), shape: BoxShape.circle),
         child: const Icon(Icons.qr_code_scanner, color: Colors.white, size: 28),
       ),
     );
   }
+
+  /// Shows a bottom sheet so the user can pick Camera or Gallery, then runs
+  /// the scan workflow.
+  Future<void> _onScanTap(BuildContext context) async {
+    final ImageSource? source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Scan Food',
+                  style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF052A1E))),
+              const SizedBox(height: 4),
+              const Text('Choose an image source',
+                  style: TextStyle(color: Colors.grey, fontSize: 13)),
+              const SizedBox(height: 16),
+              ListTile(
+                leading: const CircleAvatar(
+                  backgroundColor: Color(0xFFE8F3EF),
+                  child: Icon(Icons.camera_alt_rounded,
+                      color: Color(0xFF34A853)),
+                ),
+                title: const Text('Camera'),
+                subtitle: const Text('Take a new photo'),
+                onTap: () => Navigator.pop(ctx, ImageSource.camera),
+              ),
+              ListTile(
+                leading: const CircleAvatar(
+                  backgroundColor: Color(0xFFE8F0FE),
+                  child:
+                      Icon(Icons.photo_library_rounded, color: Color(0xFF1A73E8)),
+                ),
+                title: const Text('Gallery'),
+                subtitle: const Text('Pick from your photos'),
+                onTap: () => Navigator.pop(ctx, ImageSource.gallery),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (source == null) return; // User dismissed the sheet
+    if (!context.mounted) return;
+
+    // Show loading overlay while image is saved + analysed.
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Dialog(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(color: Color(0xFF34A853)),
+              SizedBox(height: 20),
+              Text(
+                'Analyzing food freshness...',
+                style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    try {
+      final foodData =
+          await CameraService().scanFoodItem(source: source);
+
+      if (context.mounted) {
+        Navigator.pop(context); // Close loading dialog
+        if (foodData != null) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => FoodDetailsScreen(foodData: foodData),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (context.mounted) {
+        Navigator.pop(context); // Close loading dialog
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Scan failed: $e'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    }
+  }
+
 
   Widget _buildNavItem(IconData icon, String label, bool isActive, {VoidCallback? onTap}) {
     return GestureDetector(

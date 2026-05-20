@@ -1,95 +1,153 @@
 import 'dart:convert';
 import 'dart:io';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_storage/firebase_storage.dart';
-import 'package:image_picker/image_picker.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:google_generative_ai/google_generative_ai.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'dart:typed_data';
 
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:firebase_ai/firebase_ai.dart';
+
+import 'local_image_service.dart';
+
+/// Prompt given to Gemini for freshness assessment.
+const _kGeminiPrompt = '''
+You are an expert food quality inspector.
+
+Analyze the food image and return ONLY valid JSON.
+
+{
+  "foodName": "",
+  "category": "",
+  "freshnessScore": 0,
+  "freshnessStatus": "",
+  "estimatedDaysRemaining": 0,
+  "confidence": 0,
+  "reasoning": ""
+}
+
+Determine freshness using:
+- color
+- texture
+- bruising
+- mold
+- dryness
+- visible spoilage
+
+Freshness Status:
+- Fresh (80-100)
+- Good (60-79)
+- Consume Soon (40-59)
+- Spoiled (0-39)
+
+Rules:
+- Base assessment only on visible appearance.
+- If multiple foods are present, choose the primary food item.
+- Return valid JSON only.
+- No markdown.
+- No explanations outside JSON.
+''';
+
+/// Orchestrates picking an image, saving it locally, and analysing it with Gemini.
+///
+/// No Firebase Storage is used; images live in the device's app documents dir.
 class CameraService {
   final ImagePicker _picker = ImagePicker();
-  final FirebaseStorage _storage = FirebaseStorage.instance;
-
   final FirebaseAuth _auth = FirebaseAuth.instance;
+  final LocalImageService _localImageService = LocalImageService();
 
-  Future<Map<String, dynamic>?> scanFoodItem() async {
+  /// Opens the device camera or gallery, saves the captured image locally,
+  /// runs Gemini vision analysis, and returns a result map ready to be shown
+  /// on the [FoodDetailsScreen].
+  ///
+  /// Returns `null` when the user cancels without selecting a photo.
+  /// Throws a descriptive [Exception] on any real failure.
+  Future<Map<String, dynamic>?> scanFoodItem({
+    ImageSource source = ImageSource.camera,
+  }) async {
+    // 1. Pick image from camera or gallery.
+    final XFile? picked = await _picker.pickImage(
+      source: source,
+      imageQuality: 90,
+    );
+    if (picked == null) return null; // User cancelled
+
+    // 2. Require an authenticated user.
+    final user = _auth.currentUser;
+    if (user == null) throw Exception('You must be logged in to scan items.');
+
+    // 3. Save full image + thumbnail to permanent local storage.
+    final imageFile = File(picked.path);
+    final (:imagePath, :thumbnailPath) =
+        await _localImageService.saveImage(imageFile);
+
+    // 4. Read raw bytes for the Gemini vision request.
+    final imageBytes = await File(imagePath).readAsBytes();
+
+    // 5. Analyse with Gemini.
+    final analysisResult = await _analyseWithGemini(imageBytes);
+
+    // 6. Return combined result (no Firebase Storage URL).
+    return {
+      'userId': user.uid,
+      'localImagePath': imagePath,
+      'thumbnailPath': thumbnailPath,
+      'foodName': analysisResult['foodName'] ?? 'Unknown Food',
+      'category': analysisResult['category'] ?? 'Other',
+      'freshnessScore': analysisResult['freshnessScore'] ?? 0,
+      'freshnessStatus': analysisResult['freshnessStatus'] ?? 'Unknown',
+      'estimatedDaysRemaining': analysisResult['estimatedDaysRemaining'] ?? 0,
+      'confidence': analysisResult['confidence'] ?? 0,
+      'reasoning': analysisResult['reasoning'] ?? 'No reasoning provided.',
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Private helpers
+  // ---------------------------------------------------------------------------
+
+  /// Sends [imageBytes] to the Gemini vision model and returns parsed JSON.
+  /// Uses firebase_ai to securely communicate with Gemini using Firebase config.
+  Future<Map<String, dynamic>> _analyseWithGemini(Uint8List imageBytes) async {
+    final model = FirebaseAI.googleAI().generativeModel(
+      model: 'gemini-3.5-flash',
+      generationConfig: GenerationConfig(responseMimeType: 'application/json'),
+    );
+
+    late final GenerateContentResponse response;
     try {
-      final XFile? image = await _picker.pickImage(
-        source: ImageSource.camera,
-        imageQuality: 80, // Compress slightly for faster upload
-      );
-
-      if (image == null) return null; // User cancelled
-
-      final user = _auth.currentUser;
-      if (user == null) throw Exception("User must be logged in to scan items");
-
-      final timestamp = DateTime.now().millisecondsSinceEpoch;
-      final storagePath = 'users/${user.uid}/food_images/$timestamp.jpg';
-
-      // 1. Upload to Firebase Storage
-      final ref = _storage.ref().child(storagePath);
-      String downloadUrl;
-      
-      final bytes = await image.readAsBytes();
-      
-      if (kIsWeb) {
-        final uploadTask = await ref.putData(bytes, SettableMetadata(contentType: 'image/jpeg'));
-        downloadUrl = await uploadTask.ref.getDownloadURL();
-      } else {
-        final file = File(image.path);
-        final uploadTask = await ref.putFile(file);
-        downloadUrl = await uploadTask.ref.getDownloadURL();
-      }
-
-      // 2. Call Gemini API directly
-      final apiKey = dotenv.env['GEMINI_API_KEY'];
-      if (apiKey == null || apiKey.isEmpty) {
-        throw Exception("Gemini API key is not configured");
-      }
-
-      final model = GenerativeModel(
-        model: 'gemini-1.5-flash',
-        apiKey: apiKey,
-        generationConfig: GenerationConfig(responseMimeType: 'application/json'),
-      );
-
-      final prompt = "Analyze this image. Identify the main food item shown. Also, carefully read any text to find an expiry date or best before date. Finally, provide a brief suggestion on how best to store this item to keep it fresh. Return the result strictly as a JSON object with three keys: 'foodName' (string, a clear short name of the food), 'expiryDate' (string, the date found, or null if none found), and 'storageSuggestion' (string, short advice on how to store it). Do not include markdown formatting or extra text.";
-
-      final imagePart = DataPart('image/jpeg', bytes);
-      final response = await model.generateContent([
-        Content.multi([TextPart(prompt), imagePart])
+      response = await model.generateContent([
+        Content.multi([
+          InlineDataPart('image/jpeg', imageBytes),
+          TextPart(_kGeminiPrompt),
+        ]),
       ]);
-
-      final resultText = response.text;
-      if (resultText == null) {
-        throw Exception("Empty response from Gemini API");
-      }
-
-      print("Gemini Response: $resultText");
-
-      Map<String, dynamic> parsedResult;
-      try {
-        parsedResult = jsonDecode(resultText);
-      } catch (e) {
-        print("Failed to parse Gemini response as JSON: $e");
-        final cleanText = resultText.replaceAll('```json', '').replaceAll('```', '').trim();
-        parsedResult = jsonDecode(cleanText);
-      }
-
-      return {
-        'foodName': parsedResult['foodName'] ?? 'Unknown Food',
-        'expiryDate': parsedResult['expiryDate'] ?? 'Unknown Expiry',
-        'storageSuggestion': parsedResult['storageSuggestion'] ?? 'Store in a cool, dry place.',
-        'imageUrl': downloadUrl,
-        'userId': user.uid,
-      };
-
     } catch (e) {
-      print("Error scanning food item: $e");
-      rethrow;
+      throw Exception('Gemini API request failed: $e');
+    }
+
+    final rawText = response.text;
+    if (rawText == null || rawText.trim().isEmpty) {
+      throw Exception('Gemini returned an empty response.');
+    }
+
+    return _parseJson(rawText);
+  }
+
+  /// Safely parses a JSON string from Gemini, stripping markdown fences if present.
+  Map<String, dynamic> _parseJson(String rawText) {
+    // First attempt: parse directly.
+    try {
+      return jsonDecode(rawText) as Map<String, dynamic>;
+    } catch (_) {
+      // Second attempt: strip markdown code fences then retry.
+      final cleaned = rawText
+          .replaceAll('```json', '')
+          .replaceAll('```', '')
+          .trim();
+      try {
+        return jsonDecode(cleaned) as Map<String, dynamic>;
+      } catch (e) {
+        throw Exception('Could not parse AI response as JSON: $e\nRaw: $cleaned');
+      }
     }
   }
 }
