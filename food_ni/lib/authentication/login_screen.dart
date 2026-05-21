@@ -71,10 +71,14 @@ class _LoginScreenState extends State<LoginScreen> {
       await FirebaseAuth.instance.signInWithEmailAndPassword(
         email: _emailController.text.trim(),
         password: _passwordController.text.trim(),
-      );
+      ).timeout(const Duration(seconds: 15));
     } on FirebaseAuthException catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(e.message ?? 'Login failed')),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Connection timed out or network error. Please check your internet. ($e)')),
       );
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -156,20 +160,20 @@ class _LoginScreenState extends State<LoginScreen> {
             ? GoogleSignIn()
             : GoogleSignIn(clientId: clientId);
         await googleSignIn.signOut();
-        final GoogleSignInAccount? googleUser = await googleSignIn.signIn();
+        final GoogleSignInAccount? googleUser = await googleSignIn.signIn().timeout(const Duration(seconds: 15));
         
         if (googleUser == null) {
           setState(() => _isLoading = false);
           return;
         }
 
-        final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
+        final GoogleSignInAuthentication googleAuth = await googleUser.authentication.timeout(const Duration(seconds: 15));
         final OAuthCredential credential = GoogleAuthProvider.credential(
           accessToken: googleAuth.accessToken,
           idToken: googleAuth.idToken,
         );
 
-        await FirebaseAuth.instance.signInWithCredential(credential);
+        await FirebaseAuth.instance.signInWithCredential(credential).timeout(const Duration(seconds: 15));
       }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -185,7 +189,7 @@ class _LoginScreenState extends State<LoginScreen> {
     return Scaffold(
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 40.0),
+          padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 30.0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -218,19 +222,19 @@ class _LoginScreenState extends State<LoginScreen> {
                   ],
                 ),
               ),
-              const SizedBox(height: 60),
+              const SizedBox(height: 25),
 
               // Title & Subtitle
               Text(
                 'Welcome Back',
                 style: Theme.of(context).textTheme.headlineMedium,
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 8),
               Text(
                 'Log in to manage your kitchen and reduce food waste today.',
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
-              const SizedBox(height: 40),
+              const SizedBox(height: 20),
 
               // Email Field
               const Text(
@@ -241,7 +245,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   color: Color(0xFF052A1E),
                 ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 6),
               TextField(
                 controller: _emailController,
                 decoration: const InputDecoration(
@@ -250,7 +254,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 keyboardType: TextInputType.emailAddress,
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 10),
 
               // Password Field
               Row(
@@ -291,7 +295,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                 ),
               ),
-              const SizedBox(height: 32),
+              const SizedBox(height: 15),
 
               // Login Button
               ElevatedButton(
@@ -311,7 +315,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         ],
                       ),
               ),
-              const SizedBox(height: 32),
+              const SizedBox(height: 16),
 
               // Divider
               Row(
@@ -324,7 +328,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         color: Colors.grey.shade500,
-                        fontSize: 10, // Slightly smaller to fit better
+                        fontSize: 10,
                         letterSpacing: 1.2,
                         fontWeight: FontWeight.w500,
                       ),
@@ -333,7 +337,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   const Expanded(child: Divider(color: Color(0xFFE0E0E0))),
                 ],
               ),
-              const SizedBox(height: 32),
+              const SizedBox(height: 16),
 
               // Google Login Button
               OutlinedButton(
@@ -370,7 +374,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                 ),
               ),
-              const SizedBox(height: 40),
+              const SizedBox(height: 16),
 
               // Sign Up Link
               Center(
@@ -399,7 +403,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   ],
                 ),
               ),
-              const SizedBox(height: 60),
+              const SizedBox(height: 20),
 
               // Footer
               Center(
@@ -414,7 +418,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         fontWeight: FontWeight.w600,
                       ),
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 8),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [

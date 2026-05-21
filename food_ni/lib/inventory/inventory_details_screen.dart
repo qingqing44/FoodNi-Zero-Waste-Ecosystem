@@ -1,0 +1,311 @@
+import 'dart:io';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+
+class InventoryDetailsScreen extends StatefulWidget {
+  final QueryDocumentSnapshot item;
+
+  const InventoryDetailsScreen({super.key, required this.item});
+
+  @override
+  State<InventoryDetailsScreen> createState() => _InventoryDetailsScreenState();
+}
+
+class _InventoryDetailsScreenState extends State<InventoryDetailsScreen> {
+  bool _isDeleting = false;
+
+  Color _statusColor(String? status) {
+    final s = (status ?? '').toLowerCase();
+    if (s == 'fresh') return const Color(0xFF34A853);
+    if (s == 'good') return const Color(0xFF1A73E8);
+    if (s.contains('consume')) return Colors.orange;
+    if (s == 'spoiled') return Colors.red;
+    return Colors.grey;
+  }
+
+  // Method to handle item deletion from Firestore
+  Future<void> _removeItem() async {
+    // Show a confirmation dialog before deleting
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Remove Item', style: TextStyle(color: Color(0xFF052A1E), fontWeight: FontWeight.bold)),
+        content: Text('Are you sure you want to remove "${widget.item['foodName'] ?? 'this item'}" from your inventory?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Remove', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    setState(() {
+      _isDeleting = true;
+    });
+
+    try {
+      // Use the unique Firestore document ID to delete the exact record
+      await FirebaseFirestore.instance
+          .collection('foodItems')
+          .doc(widget.item.id)
+          .delete();
+
+      if (mounted) {
+        // Go back to the previous screen (Inventory List)
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Item successfully removed')),
+        );
+      }
+    } catch (e) {
+      setState(() {
+        _isDeleting = false;
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to delete item: $e'), backgroundColor: Colors.redAccent),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final data = widget.item.data() as Map<String, dynamic>;
+    const primaryColor = Color(0xFF052A1E);
+
+    final String foodName = data['foodName'] ?? 'Unknown Item';
+    final String category = data['category'] ?? 'Uncategorized';
+    final String quantity = data['quantity'] ?? '1 unit';
+    final String expiryDate = data['expiryDate'] ?? 'N/A';
+    final String storageSuggestion = data['storageSuggestion'] ?? 'No special storage suggestions provided.';
+    final String? thumbPath = (data['thumbnailPath'] as String?) ?? (data['localImagePath'] as String?);
+    int daysRemaining = (data['estimatedDaysRemaining'] as num?)?.toInt() ?? 0;
+    String freshnessStatus = data['freshnessStatus'] ?? 'Unknown';
+
+    if (expiryDate != 'N/A') {
+      try {
+        // Parse the 'MMM dd, yyyy' string template back into an active DateTime timeline object
+        DateTime expiryParsed = DateFormat('MMM dd, yyyy').parse(expiryDate);
+        DateTime today = DateTime.now();
+        
+        DateTime cleanToday = DateTime(today.year, today.month, today.day);
+        DateTime cleanExpiry = DateTime(expiryParsed.year, expiryParsed.month, expiryParsed.day);
+        
+        // Calculate real day difference cleanly
+        daysRemaining = cleanExpiry.difference(cleanToday).inDays;
+        
+        if (daysRemaining <= 0) {
+          freshnessStatus = 'Spoiled';
+        } else if (daysRemaining <= 3) {
+          freshnessStatus = 'Good';
+        } else {
+          freshnessStatus = 'Fresh';
+        }
+      } catch (e) {
+        daysRemaining = (data['estimatedDaysRemaining'] as num?)?.toInt() ?? 0;
+      }
+    }
+
+    return Scaffold(
+      backgroundColor: const Color(0xFFF9F8F4),
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        iconTheme: const IconThemeData(color: primaryColor),
+        title: Text(
+          foodName,
+          style: const TextStyle(
+            color: primaryColor,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      ),
+      body: _isDeleting
+          ? const Center(child: CircularProgressIndicator(color: primaryColor))
+          : SingleChildScrollView(
+              padding: const EdgeInsets.all(24.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // Food Image Display Banner
+                  Center(
+                    child: Container(
+                      width: double.infinity,
+                      height: 200,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: const Color(0xFFF0F0F0)),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.05),
+                            blurRadius: 10,
+                            offset: const Offset(0, 4),
+                          )
+                        ],
+                      ),
+                      child: thumbPath != null && File(thumbPath).existsSync()
+                          ? ClipRRect(
+                              borderRadius: BorderRadius.circular(16),
+                              child: Image.file(File(thumbPath), fit: BoxFit.cover),
+                            )
+                          : const Center(
+                              child: Icon(Icons.fastfood, size: 64, color: Colors.grey),
+                            ),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+
+                  // Freshness Status Card
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: const Color(0xFFF0F0F0)),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'Freshness Status',
+                          style: TextStyle(fontWeight: FontWeight.bold, color: primaryColor, fontSize: 16),
+                        ),
+                        if (freshnessStatus.isNotEmpty)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: _statusColor(freshnessStatus).withOpacity(0.15),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              freshnessStatus.toUpperCase(),
+                              style: TextStyle(
+                                color: _statusColor(freshnessStatus),
+                                fontWeight: FontWeight.bold,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+
+                  // Details Information Block
+                  Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: const Color(0xFFF0F0F0)),
+                    ),
+                    child: Column(
+                      children: [
+                        _buildDetailRow(Icons.category, 'Category', category),
+                        const Divider(height: 24, color: Color(0xFFF0F0F0)),
+                        _buildDetailRow(Icons.scale, 'Quantity', quantity),
+                        const Divider(height: 24, color: Color(0xFFF0F0F0)),
+                        _buildDetailRow(Icons.calendar_today, 'Expiry Date', expiryDate),
+                        const Divider(height: 24, color: Color(0xFFF0F0F0)),
+                        _buildDetailRow(
+                          Icons.hourglass_bottom, 
+                          'Days Remaining', 
+                          daysRemaining >= 0 ? '$daysRemaining days left' : 'Expired',
+                          valueColor: daysRemaining <= 3 ? Colors.red : const Color(0xFF34A853),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+
+                  // Storage Suggestions Block
+                  Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: const Color(0xFFF0F0F0)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Row(
+                          children: [
+                            Icon(Icons.kitchen, color: Color(0xFF34A853), size: 20),
+                            SizedBox(width: 8),
+                            Text(
+                              'Storage Suggestion',
+                              style: TextStyle(fontWeight: FontWeight.bold, color: primaryColor, fontSize: 16),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          storageSuggestion,
+                          style: const TextStyle(color: Color(0xFF666666), fontSize: 14, height: 1.4),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 32),
+
+                  // ── Remove Button ──────────────────────────────────────────
+                  ElevatedButton.icon(
+                    onPressed: _removeItem,
+                    style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      backgroundColor: Colors.red.shade50,
+                      foregroundColor: Colors.red,
+                      elevation: 0,
+                      side: BorderSide(color: Colors.red.shade200),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                    ),
+                    icon: const Icon(Icons.delete_outline, size: 22),
+                    label: const Text(
+                      'Remove From Inventory',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+    );
+  }
+
+  Widget _buildDetailRow(IconData icon, String label, String value, {Color? valueColor}) {
+    return Row(
+      children: [
+        Icon(icon, color: const Color(0xFF34A853), size: 20),
+        const SizedBox(width: 12),
+        Text(
+          label,
+          style: const TextStyle(color: Color(0xFF666666), fontSize: 14),
+        ),
+        const Spacer(),
+        Text(
+          value,
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            color: valueColor ?? const Color(0xFF052A1E),
+            fontSize: 14,
+          ),
+        ),
+      ],
+    );
+  }
+}

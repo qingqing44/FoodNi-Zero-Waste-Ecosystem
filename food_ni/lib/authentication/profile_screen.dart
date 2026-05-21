@@ -2,10 +2,15 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:food_ni/authentication/login_screen.dart' show LoginScreen;
+import 'package:food_ni/home.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
+
+import '../assistant/assistant_screen.dart';
+import '../inventory/inventory_screen.dart';
 
 class MyProfileScreen extends StatefulWidget {
   const MyProfileScreen({super.key});
@@ -133,10 +138,10 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
                 child: _isEditing ? _buildEditMode() : _buildViewMode(),
               ),
             ),
-            _buildBottomNav(),
           ],
         ),
       ),
+      bottomNavigationBar: _buildBottomNav(context),
     );
   }
 
@@ -375,7 +380,17 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
         TextButton(
           onPressed: () async {
             await FirebaseAuth.instance.signOut();
-            if (mounted) Navigator.of(context).pop();
+            if (context.mounted) {
+              // 3. Clear out all back-history stacks and push explicitly to your entry/login screen
+              Navigator.pushAndRemoveUntil(
+                context,
+                MaterialPageRoute(
+                  // Replace 'LoginScreen()' with your exact initial login or landing screen view name
+                  builder: (context) => const LoginScreen(), 
+                ),
+                (route) => false, // This wipes the widget tree stack, preventing any navbar context clash
+              );
+            };
           },
           child: const Text(
             'Sign Out',
@@ -622,29 +637,33 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
     );
   }
 
-  Widget _buildBottomNav() {
+  Widget _buildBottomNav(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+      padding: const EdgeInsets.symmetric(vertical: 15, horizontal: 10),
       decoration: const BoxDecoration(
         color: Colors.white,
         border: Border(top: BorderSide(color: Color(0xFFF0F0F0))),
       ),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
-          _buildNavItem(Icons.inventory_2_outlined, 'INVENTORY', false),
-          _buildNavItem(Icons.auto_awesome_outlined, 'ASSISTANT', false),
-          _buildScanButton(),
-          _buildNavItem(Icons.group_outlined, 'SOCIAL', false, onTap: () {
-            Navigator.of(context).pop(); // Go back to Home/Social
+          _buildNavItem(Icons.inventory_2_outlined, 'INVENTORY', false, onTap: () {
+            Navigator.push(context, MaterialPageRoute(builder: (context) => const InventoryScreen()));
           }),
-          _buildNavItem(Icons.person, 'PROFILE', true),
+          _buildNavItem(Icons.group_outlined, 'SOCIAL', false, onTap: () {
+            Navigator.push(context, MaterialPageRoute(builder: (context) => const HomeScreen()));
+          }),
+          _buildScanButton(context),
+          _buildNavItem(Icons.auto_awesome_outlined, 'ASSISTANT', false, onTap: () {
+            Navigator.push(context, MaterialPageRoute(builder: (context) => const AssistantScreen()));
+          }),
+          _buildNavItem(Icons.person_outline, 'PROFILE', true),
         ],
       ),
     );
   }
 
-  Widget _buildScanButton() {
+  Widget _buildScanButton(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: const BoxDecoration(color: Color(0xFF052A1E), shape: BoxShape.circle),

@@ -6,6 +6,7 @@ import 'camera/camera_service.dart';
 import 'camera/details_screen.dart';
 import 'inventory/inventory_screen.dart';
 import 'assistant/assistant_screen.dart';
+import 'inventory/add_item_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -31,7 +32,7 @@ class HomeScreen extends StatelessWidget {
                     const SizedBox(height: 8),
                     _buildSearchBar(),
                     const SizedBox(height: 16),
-                    _buildFilterRow(),
+                    _buildFilterRow(context),
                     const SizedBox(height: 16),
                     _buildCategoryChips(),
                     const SizedBox(height: 24),
@@ -143,7 +144,7 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildFilterRow() {
+  Widget _buildFilterRow(BuildContext context) {
     return Row(
       children: [
         Expanded(
@@ -164,13 +165,21 @@ class HomeScreen extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 12),
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: const Color(0xFF052A1E),
-            borderRadius: BorderRadius.circular(12),
+        GestureDetector(
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const AddItemScreen()),
+            );
+          },
+          child: Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFF052A1E),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(Icons.add, color: Colors.white),
           ),
-          child: const Icon(Icons.add, color: Colors.white),
         ),
       ],
     );
@@ -372,22 +381,22 @@ class HomeScreen extends StatelessWidget {
 
   Widget _buildBottomNav(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+      padding: const EdgeInsets.symmetric(vertical: 15, horizontal: 10),
       decoration: const BoxDecoration(
         color: Colors.white,
         border: Border(top: BorderSide(color: Color(0xFFF0F0F0))),
       ),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
           _buildNavItem(Icons.inventory_2_outlined, 'INVENTORY', false, onTap: () {
             Navigator.push(context, MaterialPageRoute(builder: (context) => const InventoryScreen()));
           }),
+          _buildNavItem(Icons.group_outlined, 'SOCIAL', true),
+          _buildScanButton(context),
           _buildNavItem(Icons.auto_awesome_outlined, 'ASSISTANT', false, onTap: () {
             Navigator.push(context, MaterialPageRoute(builder: (context) => const AssistantScreen()));
           }),
-          _buildScanButton(context),
-          _buildNavItem(Icons.group_outlined, 'SOCIAL', true),
           _buildNavItem(Icons.person_outline, 'PROFILE', false, onTap: () {
             Navigator.push(context, MaterialPageRoute(builder: (context) => const MyProfileScreen()));
           }),
@@ -403,7 +412,7 @@ class HomeScreen extends StatelessWidget {
         padding: const EdgeInsets.all(12),
         decoration: const BoxDecoration(
             color: Color(0xFF052A1E), shape: BoxShape.circle),
-        child: const Icon(Icons.qr_code_scanner, color: Colors.white, size: 28),
+        child: const Icon(Icons.qr_code_scanner, color: Colors.white, size: 30),
       ),
     );
   }

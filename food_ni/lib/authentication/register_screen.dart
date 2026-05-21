@@ -85,9 +85,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
       final credential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
         email: _emailController.text.trim(),
         password: _passwordController.text.trim(),
-      );
+      ).timeout(const Duration(seconds: 15));
       // Update display name
-      await credential.user?.updateDisplayName(_nameController.text.trim());
+      await credential.user?.updateDisplayName(_nameController.text.trim()).timeout(const Duration(seconds: 10));
       
       // Sign out immediately so user has to login manually
       await FirebaseAuth.instance.signOut();
@@ -101,6 +101,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
     } on FirebaseAuthException catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(e.message ?? 'Registration failed')),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Connection timed out or network error. Please check your internet. ($e)')),
       );
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -122,20 +126,20 @@ class _RegisterScreenState extends State<RegisterScreen> {
         );
         // Force logout first to ensure account picker appears
         await googleSignIn.signOut();
-        final GoogleSignInAccount? googleUser = await googleSignIn.signIn();
+        final GoogleSignInAccount? googleUser = await googleSignIn.signIn().timeout(const Duration(seconds: 15));
         
         if (googleUser == null) {
           setState(() => _isLoading = false);
           return;
         }
 
-        final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
+        final GoogleSignInAuthentication googleAuth = await googleUser.authentication.timeout(const Duration(seconds: 15));
         final OAuthCredential credential = GoogleAuthProvider.credential(
           accessToken: googleAuth.accessToken,
           idToken: googleAuth.idToken,
         );
 
-        await FirebaseAuth.instance.signInWithCredential(credential);
+        await FirebaseAuth.instance.signInWithCredential(credential).timeout(const Duration(seconds: 15));
       }
 
       // After successful Google sign-up, sign out to match the email flow
@@ -177,7 +181,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         centerTitle: false,
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24.0),
+        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
         child: Container(
           decoration: BoxDecoration(
             color: Colors.white,
@@ -190,7 +194,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
               ),
             ],
           ),
-          padding: const EdgeInsets.all(24),
+          padding: const EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -202,7 +206,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   color: Color(0xFF052A1E),
                 ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 4),
               const Text(
                 'Join FoodNi and organize your kitchen today.',
                 style: TextStyle(
@@ -210,7 +214,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   fontSize: 15,
                 ),
               ),
-              const SizedBox(height: 32),
+              const SizedBox(height: 12),
 
               // Full Name
               const Text(
@@ -221,7 +225,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   color: Color(0xFF052A1E),
                 ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 4),
               TextField(
                 controller: _nameController,
                 decoration: InputDecoration(
@@ -233,7 +237,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   ),
                 ),
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 10),
 
               // Email
               const Text(
@@ -244,7 +248,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   color: Color(0xFF052A1E),
                 ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 4),
               TextField(
                 controller: _emailController,
                 decoration: InputDecoration(
@@ -257,7 +261,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 ),
                 keyboardType: TextInputType.emailAddress,
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 10),
 
               // Password
               const Text(
@@ -268,7 +272,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   color: Color(0xFF052A1E),
                 ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 4),
               TextField(
                 controller: _passwordController,
                 obscureText: _obscurePassword,
@@ -288,7 +292,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   ),
                 ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 4),
               const Text(
                 'Must be at least 8 characters with one number.',
                 style: TextStyle(
@@ -297,7 +301,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   fontStyle: FontStyle.italic,
                 ),
               ),
-              const SizedBox(height: 32),
+              const SizedBox(height: 12),
 
               // Sign Up Button
               ElevatedButton(
@@ -310,7 +314,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       )
                     : const Text('Sign Up'),
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 12),
 
               // Divider
               Row(
@@ -330,7 +334,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   const Expanded(child: Divider(color: Color(0xFFF0F0F0))),
                 ],
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 12),
 
               // Google Button
               OutlinedButton(
@@ -361,7 +365,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   ],
                 ),
               ),
-              const SizedBox(height: 32),
+              const SizedBox(height: 12),
 
               // Login Link
               Center(
@@ -384,11 +388,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   ),
                 ),
               ),
-              const SizedBox(height: 32),
+              const SizedBox(height: 12),
               // Footer / Terms
               Center(
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 24),
+                  padding: const EdgeInsets.symmetric(vertical: 8),
                   child: RichText(
                     textAlign: TextAlign.center,
                     text: TextSpan(

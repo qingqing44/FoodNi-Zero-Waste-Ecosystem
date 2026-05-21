@@ -18,21 +18,24 @@ class AddItemScreen extends StatefulWidget {
 class _AddItemScreenState extends State<AddItemScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
+  final _quantityController = TextEditingController(text: '1');
   final _storageController = TextEditingController();
-  final _categoryController = TextEditingController();
-  final _quantityController = TextEditingController();
   
+  String? _selectedCategory;
+  String _selectedUnit = 'Unit';
   DateTime? _selectedDate;
   bool _isLoading = false;
   XFile? _selectedImage;
   final ImagePicker _picker = ImagePicker();
 
+  final List<String> _categories = ['Produce', 'Main Course', 'Prepared Meal', 'Meat & Seafood', 'Dessert/Pastry', 'Frozen', 'Packaged Beverages', 'Fruit'];
+  final List<String> _units = ['Unit', 'kg', 'g', 'lbs', 'L', 'ml', 'oz', 'Pack'];
+
   @override
   void dispose() {
     _nameController.dispose();
-    _storageController.dispose();
-    _categoryController.dispose();
     _quantityController.dispose();
+    _storageController.dispose();
     super.dispose();
   }
 
@@ -106,7 +109,7 @@ class _AddItemScreenState extends State<AddItemScreen> {
         );
       },
     );
-    if (picked != null && picked != _selectedDate) {
+    if (picked != null) {
       setState(() {
         _selectedDate = picked;
       });
@@ -132,10 +135,8 @@ class _AddItemScreenState extends State<AddItemScreen> {
 
       String? downloadUrl;
 
-      // Save image locally if selected
       if (_selectedImage != null) {
         if (kIsWeb) {
-          // On web just use the temp path
           downloadUrl = _selectedImage!.path;
         } else {
           final appDir = await getApplicationDocumentsDirectory();
@@ -150,18 +151,25 @@ class _AddItemScreenState extends State<AddItemScreen> {
 
       final DateFormat formatter = DateFormat('MMM dd, yyyy');
       final formattedDate = formatter.format(_selectedDate!);
+      
+      final daysRemaining = _selectedDate!.difference(DateTime.now()).inDays;
+      final quantityDisplay = '${_quantityController.text.trim()} ${_selectedUnit == 'Unit' ? 'pcs' : _selectedUnit}';
 
       await FirebaseFirestore.instance.collection('foodItems').add({
         'userId': user.uid,
         'foodName': _nameController.text.trim(),
         'expiryDate': formattedDate,
-        'category': _categoryController.text.trim(),
-        'quantity': _quantityController.text.trim(),
+        'category': _selectedCategory ?? 'Uncategorized',
+        'quantity': quantityDisplay,
         'storageSuggestion': _storageController.text.trim().isNotEmpty 
             ? _storageController.text.trim() 
             : 'No storage suggestion provided.',
-        'imageUrl': downloadUrl,
-        'captureDate': FieldValue.serverTimestamp(),
+        'thumbnailPath': downloadUrl,
+        'localImagePath': downloadUrl,
+        'freshnessStatus': daysRemaining > 3 ? 'Fresh' : (daysRemaining >= 0 ? 'Good' : 'Spoiled'),
+        'freshnessScore': daysRemaining > 5 ? 100 : (daysRemaining > 0 ? 75 : 0),
+        'estimatedDaysRemaining': daysRemaining,
+        'scanDate': FieldValue.serverTimestamp(),
         'source': 'manual'
       });
 
@@ -223,7 +231,7 @@ class _AddItemScreenState extends State<AddItemScreen> {
                             border: Border.all(color: const Color(0xFFF0F0F0)),
                             boxShadow: [
                               BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.05),
+                                color: Colors.black.withOpacity(0.05),
                                 blurRadius: 10,
                                 offset: const Offset(0, 4),
                               )
@@ -248,6 +256,7 @@ class _AddItemScreenState extends State<AddItemScreen> {
                       ),
                     ),
                     const SizedBox(height: 24),
+                    
                     _buildTextField(
                       controller: _nameController,
                       label: 'Food Name',
@@ -260,28 +269,55 @@ class _AddItemScreenState extends State<AddItemScreen> {
                       },
                     ),
                     const SizedBox(height: 20),
+                    
+                    // Dropdown for Category matching your application field styling
+                    _buildDropdownField(
+                      label: 'Category',
+                      icon: Icons.category,
+                      value: _selectedCategory,
+                      hint: 'Select Category',
+                      items: _categories,
+                      onChanged: (val) => setState(() => _selectedCategory = val),
+                      validator: (value) => value == null ? 'Please select a category' : null,
+                    ),
+                    const SizedBox(height: 20),
+
+                    // Side by Side Quantity configuration
                     Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Expanded(
-                          child: _buildTextField(
-                            controller: _categoryController,
-                            label: 'Category',
-                            icon: Icons.category,
-                            hint: 'e.g. Fruits',
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
+                          flex: 2,
                           child: _buildTextField(
                             controller: _quantityController,
                             label: 'Quantity',
                             icon: Icons.scale,
-                            hint: 'e.g. 2 pcs, 500g',
+                            hint: '1',
+                            keyboardType: TextInputType.number,
+                            validator: (value) {
+                              if (value == null || value.isEmpty) {
+                                return 'Required';
+                              }
+                              return null;
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 15),
+                        Expanded(
+                          flex: 2,
+                          child: _buildDropdownField(
+                            label: 'Unit',
+                            icon: Icons.unfold_more,
+                            value: _selectedUnit,
+                            hint: 'Unit',
+                            items: _units,
+                            onChanged: (val) => setState(() => _selectedUnit = val!),
                           ),
                         ),
                       ],
                     ),
                     const SizedBox(height: 20),
+                    
                     GestureDetector(
                       onTap: () => _selectDate(context),
                       child: AbsorbPointer(
@@ -304,6 +340,7 @@ class _AddItemScreenState extends State<AddItemScreen> {
                       ),
                     ),
                     const SizedBox(height: 20),
+                    
                     _buildTextField(
                       controller: _storageController,
                       label: 'Storage Suggestion (Optional)',
@@ -311,6 +348,7 @@ class _AddItemScreenState extends State<AddItemScreen> {
                       maxLines: 3,
                     ),
                     const SizedBox(height: 40),
+                    
                     ElevatedButton(
                       onPressed: _saveItem,
                       style: ElevatedButton.styleFrom(
@@ -342,12 +380,14 @@ class _AddItemScreenState extends State<AddItemScreen> {
     required IconData icon,
     String? hint,
     int maxLines = 1,
+    TextInputType keyboardType = TextInputType.text,
     String? Function(String?)? validator,
   }) {
     return TextFormField(
       controller: controller,
       maxLines: maxLines,
       validator: validator,
+      keyboardType: keyboardType,
       decoration: InputDecoration(
         labelText: label,
         hintText: hint,
@@ -372,6 +412,45 @@ class _AddItemScreenState extends State<AddItemScreen> {
           borderSide: const BorderSide(color: Colors.red),
         ),
       ),
+    );
+  }
+
+  Widget _buildDropdownField({
+    required String label,
+    required IconData icon,
+    required String? value,
+    required String hint,
+    required List<String> items,
+    required ValueChanged<String?> onChanged,
+    String? Function(String?)? validator,
+  }) {
+    return DropdownButtonFormField<String>(
+      value: value,
+      hint: Text(hint, style: const TextStyle(color: Color(0xFF666666), fontSize: 14)),
+      onChanged: onChanged,
+      validator: validator,
+      decoration: InputDecoration(
+        labelText: label,
+        labelStyle: const TextStyle(color: Color(0xFF666666)),
+        prefixIcon: Icon(icon, color: const Color(0xFF34A853)),
+        filled: true,
+        fillColor: Colors.white,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: const BorderSide(color: Color(0xFFF0F0F0)),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: const BorderSide(color: Color(0xFFF0F0F0)),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: const BorderSide(color: Color(0xFF052A1E), width: 2),
+        ),
+      ),
+      items: items.map((item) {
+        return DropdownMenuItem(value: item, child: Text(item));
+      }).toList(),
     );
   }
 }

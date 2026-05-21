@@ -1,7 +1,9 @@
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 
 /// Displays the Gemini analysis result for a scanned food item and lets the
 /// user save it to their Firestore inventory or discard it.
@@ -37,39 +39,90 @@ class _FoodDetailsScreenState extends State<FoodDetailsScreen> {
   // ---------------------------------------------------------------------------
 
   Future<void> _saveToInventory() async {
-    setState(() => _isSaving = true);
+    setState(() {
+      _isSaving = true;
+    });
+
     try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) throw Exception('User not logged in');
+
+      DateTime expiryDateTime;
+      final rawAiDate = widget.foodData['expiryDate'];
+      
+      // Grab the actual shelf life value detected by your AI model
+      final int aiDaysRemaining = (widget.foodData['estimatedDaysRemaining'] as num?)?.toInt() ?? 7;
+
+      if (rawAiDate is DateTime) {
+        expiryDateTime = rawAiDate;
+      } else if (rawAiDate is String) {
+        try {
+          expiryDateTime = DateFormat('MMM dd, yyyy').parse(rawAiDate);
+        } catch (_) {
+          try {
+            expiryDateTime = DateTime.parse(rawAiDate);
+          } catch (_) {
+            expiryDateTime = DateTime.now().add(Duration(days: aiDaysRemaining));
+          }
+        }
+      } else {
+        // Use the AI's detected remaining days instead of defaulting to a static 7 days
+        expiryDateTime = DateTime.now().add(Duration(days: aiDaysRemaining));
+      }
+
+      // Format strings matching your manual entry screen setup
+      final String formattedExpiryString = DateFormat('MMM dd, yyyy').format(expiryDateTime);
+      
+      // Zero out structural hourly variances to ensure daily countdown integrity
+      final today = DateTime.now();
+      final todayCleaned = DateTime(today.year, today.month, today.day);
+      final expiryCleaned = DateTime(expiryDateTime.year, expiryDateTime.month, expiryDateTime.day);
+      final int dynamicDaysRemaining = expiryCleaned.difference(todayCleaned).inDays;
+
+      String calculatedStatus = 'Fresh';
+      if (dynamicDaysRemaining <= 0) {
+        calculatedStatus = 'Spoiled';
+      } else if (dynamicDaysRemaining <= 3) {
+        calculatedStatus = 'Good'; 
+      }
+
+      // Commit precisely aligned key maps to Firestore
       await FirebaseFirestore.instance.collection('foodItems').add({
-        'userId': widget.foodData['userId'],
+        'userId': user.uid,
+        'foodName': widget.foodData['foodName'] ?? widget.foodData['name'] ?? 'Scanned Item',
+        'category': widget.foodData['category'] ?? 'Uncategorized',
+        'quantity': widget.foodData['quantity'] ?? '1 pcs',
+        'storageSuggestion': widget.foodData['storageSuggestion'] ?? widget.foodData['storage'] ?? 'No special storage suggestions provided.',
+        'thumbnailPath': widget.foodData['thumbnailPath'] ?? widget.foodData['localImagePath'],
         'localImagePath': widget.foodData['localImagePath'],
-        'thumbnailPath': widget.foodData['thumbnailPath'],
-        'foodName': widget.foodData['foodName'],
-        'category': widget.foodData['category'],
-        'freshnessScore': widget.foodData['freshnessScore'],
-        'freshnessStatus': widget.foodData['freshnessStatus'],
-        'estimatedDaysRemaining': widget.foodData['estimatedDaysRemaining'],
-        'confidence': widget.foodData['confidence'],
-        'reasoning': widget.foodData['reasoning'],
+        
+        'expiryDate': formattedExpiryString, 
+        'estimatedDaysRemaining': dynamicDaysRemaining, 
+        'freshnessStatus': widget.foodData['freshnessStatus'] ?? calculatedStatus,
+        'freshnessScore': widget.foodData['freshnessScore'] ?? (dynamicDaysRemaining > 0 ? 100 : 0),
+        
         'scanDate': FieldValue.serverTimestamp(),
+        'source': 'ai_scan'
       });
 
       if (mounted) {
-        Navigator.pop(context);
+        Navigator.pop(context); 
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Item saved to inventory!'),
-            backgroundColor: Color(0xFF34A853),
-          ),
+          const SnackBar(content: Text('Scanned food item saved to inventory!')),
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to save: $e')),
+          SnackBar(content: Text('Failed to save item: $e'), backgroundColor: Colors.redAccent),
         );
       }
     } finally {
-      if (mounted) setState(() => _isSaving = false);
+      if (mounted) {
+        setState(() {
+          _isSaving = false;
+        });
+      }
     }
   }
 

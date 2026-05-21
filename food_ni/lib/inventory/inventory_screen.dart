@@ -3,8 +3,10 @@ import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 
 import 'add_item_screen.dart';
+import 'inventory_details_screen.dart';
 
 /// Displays the current user's scanned food inventory from Firestore.
 /// Images are loaded from the local device path stored in [thumbnailPath].
@@ -24,8 +26,6 @@ class InventoryScreen extends StatelessWidget {
     return Colors.grey;
   }
 
-  // ---------------------------------------------------------------------------
-  // Build
   // ---------------------------------------------------------------------------
 
   @override
@@ -78,7 +78,7 @@ class InventoryScreen extends StatelessWidget {
                   Icon(Icons.kitchen_outlined, size: 64, color: Colors.grey),
                   SizedBox(height: 16),
                   Text(
-                    'No food items yet.\nTap the scanner to add some!',
+                    'No food items yet.\nEnter manually or tap the scanner to add some!',
                     textAlign: TextAlign.center,
                     style: TextStyle(color: Color(0xFF666666), fontSize: 16),
                   ),
@@ -91,8 +91,21 @@ class InventoryScreen extends StatelessWidget {
             padding: const EdgeInsets.all(16),
             itemCount: docs.length,
             itemBuilder: (context, index) {
-              final data = docs[index].data() as Map<String, dynamic>;
-              return _InventoryCard(data: data, statusColor: _statusColor);
+              final doc = docs[index]; 
+              final data = doc.data() as Map<String, dynamic>;
+
+              return InkWell(
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => InventoryDetailsScreen(item: doc),
+                    ),
+                  );
+                },
+                borderRadius: BorderRadius.circular(16),
+                child: _InventoryCard(data: data, statusColor: _statusColor),
+              );
             },
           );
         },
@@ -113,8 +126,7 @@ class InventoryScreen extends StatelessWidget {
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// A single inventory card that shows the thumbnail, food name, freshness badge,
-/// category chip and estimated days remaining.
+/// A single inventory card that shows the thumbnail, food name, freshness badge, category chip and estimated days remaining.
 class _InventoryCard extends StatelessWidget {
   const _InventoryCard({
     required this.data,
@@ -130,14 +142,18 @@ class _InventoryCard extends StatelessWidget {
     final category = data['category'] as String? ?? '';
     final freshnessStatus = data['freshnessStatus'] as String? ?? '';
     final freshnessScore = (data['freshnessScore'] as num?)?.toInt() ?? 0;
-    final estimatedDaysRemaining =
-        (data['estimatedDaysRemaining'] as num?)?.toInt() ?? 0;
-
-    // Prefer the faster thumbnail; fall back to full image if thumbnail is absent.
-    final thumbPath =
-        (data['thumbnailPath'] as String?) ?? (data['localImagePath'] as String?);
+    final String expiryDate = data['expiryDate'] ?? 'N/A';
+    int estimatedDaysRemaining = (data['estimatedDaysRemaining'] as num?)?.toInt() ?? 0;
+    final thumbPath = (data['thumbnailPath'] as String?) ?? (data['localImagePath'] as String?);
 
     final color = statusColor(freshnessStatus);
+
+    DateTime expiryParsed = DateFormat('MMM dd, yyyy').parse(expiryDate);
+    DateTime today = DateTime.now();
+
+    DateTime cleanToday = DateTime(today.year, today.month, today.day);
+    DateTime cleanExpiry = DateTime(expiryParsed.year, expiryParsed.month, expiryParsed.day);
+    estimatedDaysRemaining = cleanExpiry.difference(cleanToday).inDays;
 
     return Card(
       margin: const EdgeInsets.only(bottom: 14),
@@ -153,14 +169,12 @@ class _InventoryCard extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ── Thumbnail ─────────────────────────────────────────────────
             ClipRRect(
               borderRadius: BorderRadius.circular(12),
               child: _buildThumbnail(thumbPath),
             ),
             const SizedBox(width: 14),
 
-            // ── Details ───────────────────────────────────────────────────
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
