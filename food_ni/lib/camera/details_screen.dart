@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
@@ -90,11 +91,19 @@ class _FoodDetailsScreenState extends State<FoodDetailsScreen> {
       await FirebaseFirestore.instance.collection('foodItems').add({
         'userId': user.uid,
         'foodName': widget.foodData['foodName'] ?? widget.foodData['name'] ?? 'Scanned Item',
+        'description':
+            widget.foodData['description'] ??
+            'No food description available.',
         'category': widget.foodData['category'] ?? 'Uncategorized',
         'quantity': widget.foodData['quantity'] ?? '1 pcs',
         'storageSuggestion': widget.foodData['storageSuggestion'] ?? widget.foodData['storage'] ?? 'No special storage suggestions provided.',
         'thumbnailPath': widget.foodData['thumbnailPath'] ?? widget.foodData['localImagePath'],
         'localImagePath': widget.foodData['localImagePath'],
+        'caloriesPer100g':
+            widget.foodData['caloriesPer100g'] ?? 'Not available',
+        'basicRecipes': _basicRecipesFrom(widget.foodData['basicRecipes'])
+            .map((recipe) => recipe.toMap())
+            .toList(),
         
         'expiryDate': formattedExpiryString, 
         'estimatedDaysRemaining': dynamicDaysRemaining, 
@@ -135,11 +144,16 @@ class _FoodDetailsScreenState extends State<FoodDetailsScreen> {
     final data = widget.foodData;
 
     final foodName = data['foodName'] as String? ?? 'Unknown Item';
+    final description =
+        data['description'] as String? ?? 'No food description available.';
     final category = data['category'] as String? ?? 'Other';
     final freshnessScore = (data['freshnessScore'] as num?)?.toInt() ?? 0;
     final freshnessStatus = data['freshnessStatus'] as String? ?? 'Unknown';
     final estimatedDaysRemaining =
         (data['estimatedDaysRemaining'] as num?)?.toInt() ?? 0;
+    final caloriesPer100g =
+        data['caloriesPer100g'] as String? ?? 'Not available';
+    final basicRecipes = _basicRecipesFrom(data['basicRecipes']);
     final confidence = (data['confidence'] as num?)?.toInt() ?? 0;
     final reasoning =
         data['reasoning'] as String? ?? 'No reasoning provided.';
@@ -182,12 +196,20 @@ class _FoodDetailsScreenState extends State<FoodDetailsScreen> {
             ),
             const SizedBox(height: 4),
             _buildCategoryChip(category),
-            const SizedBox(height: 20),
+            const SizedBox(height: 24),
 
             // ── Freshness badge ──────────────────────────────────────────────
             _buildFreshnessBadge(
               freshnessStatus, freshnessScore, statusColor, statusBg),
             const SizedBox(height: 16),
+            _buildInfoCard(
+              icon: Icons.description_outlined,
+              title: 'Food Description',
+              content: description,
+              bgColor: const Color(0xFFFFF4E5),
+              iconColor: const Color(0xFFB26A00),
+            ),
+            const SizedBox(height: 12),
 
             // ── Info cards ───────────────────────────────────────────────────
             _buildInfoCard(
@@ -196,6 +218,14 @@ class _FoodDetailsScreenState extends State<FoodDetailsScreen> {
               content: '$estimatedDaysRemaining day${estimatedDaysRemaining == 1 ? '' : 's'} remaining',
               bgColor: const Color(0xFFE8F3EF),
               iconColor: const Color(0xFF34A853),
+            ),
+            const SizedBox(height: 12),
+            _buildInfoCard(
+              icon: Icons.local_fire_department_outlined,
+              title: 'Calories per 100g',
+              content: caloriesPer100g,
+              bgColor: const Color(0xFFFFF1F0),
+              iconColor: const Color(0xFFE85D3F),
             ),
             const SizedBox(height: 12),
             _buildInfoCard(
@@ -213,6 +243,8 @@ class _FoodDetailsScreenState extends State<FoodDetailsScreen> {
               bgColor: const Color(0xFFF3E5F5),
               iconColor: Colors.purple,
             ),
+            const SizedBox(height: 12),
+            _buildRecipesCard(basicRecipes),
           ],
         ),
       ),
@@ -228,13 +260,21 @@ class _FoodDetailsScreenState extends State<FoodDetailsScreen> {
   Widget _buildFoodImage(String? localImagePath) {
     Widget imageWidget;
 
-    if (localImagePath != null && File(localImagePath).existsSync()) {
+    if (_isNetworkLikePath(localImagePath)) {
+      imageWidget = Image.network(
+        localImagePath!,
+        fit: BoxFit.cover,
+        width: double.infinity,
+        height: 250,
+        errorBuilder: (_, _, _) => _placeholderImage(),
+      );
+    } else if (localImagePath != null && !kIsWeb && File(localImagePath).existsSync()) {
       imageWidget = Image.file(
         File(localImagePath),
         fit: BoxFit.cover,
         width: double.infinity,
         height: 250,
-        errorBuilder: (_, __, ___) => _placeholderImage(),
+        errorBuilder: (_, _, _) => _placeholderImage(),
       );
     } else {
       imageWidget = _placeholderImage();
@@ -244,6 +284,11 @@ class _FoodDetailsScreenState extends State<FoodDetailsScreen> {
       borderRadius: BorderRadius.circular(20),
       child: imageWidget,
     );
+  }
+
+  bool _isNetworkLikePath(String? path) {
+    if (path == null || path.isEmpty) return false;
+    return path.startsWith('http') || path.startsWith('data:');
   }
 
   Widget _placeholderImage() => Container(
@@ -430,4 +475,174 @@ class _FoodDetailsScreenState extends State<FoodDetailsScreen> {
       ),
     );
   }
+
+  List<_RecipeCardData> _basicRecipesFrom(dynamic rawRecipes) {
+    if (rawRecipes is List) {
+      final recipes = rawRecipes
+          .map(_recipeCardDataFrom)
+          .where((recipe) => recipe != null)
+          .cast<_RecipeCardData>()
+          .take(2)
+          .toList();
+      if (recipes.isNotEmpty) return _ensureTwoRecipes(recipes);
+    }
+
+    if (rawRecipes is String && rawRecipes.trim().isNotEmpty) {
+      return _ensureTwoRecipes([
+        _RecipeCardData(
+          title: 'Simple Serving Idea',
+          steps: [rawRecipes.trim()],
+        ),
+      ]);
+    }
+
+    return _fallbackRecipes;
+  }
+
+  _RecipeCardData? _recipeCardDataFrom(dynamic rawRecipe) {
+    if (rawRecipe is Map) {
+      final title = rawRecipe['title']?.toString().trim() ?? '';
+      final rawSteps = rawRecipe['steps'];
+      final steps = rawSteps is List
+          ? rawSteps
+              .map((step) => step?.toString().trim() ?? '')
+              .where((step) => step.isNotEmpty)
+              .take(3)
+              .toList()
+          : <String>[];
+
+      if (title.isEmpty && steps.isEmpty) return null;
+      return _RecipeCardData(
+        title: title.isNotEmpty ? title : 'Recipe Idea',
+        steps: steps.isNotEmpty ? steps : const ['No steps provided yet.'],
+      );
+    }
+
+    final recipeText = rawRecipe?.toString().trim() ?? '';
+    if (recipeText.isEmpty) return null;
+    return _RecipeCardData(
+      title: 'Recipe Idea',
+      steps: [recipeText],
+    );
+  }
+
+  List<_RecipeCardData> _ensureTwoRecipes(List<_RecipeCardData> recipes) {
+    final result = List<_RecipeCardData>.from(recipes);
+    while (result.length < 2) {
+      result.add(_fallbackRecipes[result.length]);
+    }
+    return result.take(2).toList();
+  }
+
+  Widget _buildRecipesCard(List<_RecipeCardData> recipes) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFBEE),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(
+                Icons.menu_book_rounded,
+                color: Color(0xFFB26A00),
+                size: 22,
+              ),
+              SizedBox(width: 10),
+              Text(
+                'Basic Recipes',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF052A1E),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(child: _buildRecipeColumn(recipes[0])),
+              const SizedBox(width: 12),
+              Expanded(child: _buildRecipeColumn(recipes[1])),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRecipeColumn(_RecipeCardData recipe) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFF5E6B8)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            recipe.title,
+            style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF052A1E),
+            ),
+          ),
+          const SizedBox(height: 10),
+          ...recipe.steps.asMap().entries.map(
+            (entry) => Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Text(
+                '${entry.key + 1}. ${entry.value}',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: Colors.grey.shade800,
+                  height: 1.4,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static const List<_RecipeCardData> _fallbackRecipes = [
+    _RecipeCardData(
+      title: 'Fresh Snack Bowl',
+      steps: [
+        'Slice the food into bite-sized pieces.',
+        'Serve immediately as a fresh snack.',
+      ],
+    ),
+    _RecipeCardData(
+      title: 'Quick Kitchen Mix',
+      steps: [
+        'Combine the food with a few pantry staples.',
+        'Adjust seasoning and serve right away.',
+      ],
+    ),
+  ];
+}
+
+class _RecipeCardData {
+  const _RecipeCardData({
+    required this.title,
+    required this.steps,
+  });
+
+  final String title;
+  final List<String> steps;
+
+  Map<String, dynamic> toMap() => {
+    'title': title,
+    'steps': steps,
+  };
 }

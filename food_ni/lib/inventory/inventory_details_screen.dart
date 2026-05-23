@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
@@ -24,6 +25,11 @@ class _InventoryDetailsScreenState extends State<InventoryDetailsScreen> {
     if (s.contains('consume')) return Colors.orange;
     if (s == 'spoiled') return Colors.red;
     return Colors.grey;
+  }
+
+  bool _isNetworkLikePath(String? path) {
+    if (path == null || path.isEmpty) return false;
+    return path.startsWith('http') || path.startsWith('data:');
   }
 
   Future<void> _editItem() async {
@@ -201,7 +207,22 @@ class _InventoryDetailsScreenState extends State<InventoryDetailsScreen> {
                           ),
                         ],
                       ),
-                      child: thumbPath != null && File(thumbPath).existsSync()
+                      child: _isNetworkLikePath(thumbPath)
+                          ? ClipRRect(
+                              borderRadius: BorderRadius.circular(16),
+                              child: Image.network(
+                                thumbPath!,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, _, _) => const Center(
+                                  child: Icon(
+                                    Icons.fastfood,
+                                    size: 64,
+                                    color: Colors.grey,
+                                  ),
+                                ),
+                              ),
+                            )
+                          : thumbPath != null && !kIsWeb && File(thumbPath).existsSync()
                           ? ClipRRect(
                               borderRadius: BorderRadius.circular(16),
                               child: Image.file(

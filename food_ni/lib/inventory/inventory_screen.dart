@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
@@ -496,7 +497,16 @@ class _InventoryCard extends StatelessWidget {
   }
 
   Widget _buildThumbnail(String? path) {
-    if (path != null && File(path).existsSync()) {
+    if (_isNetworkLikePath(path)) {
+      return Image.network(
+        path!,
+        width: 90,
+        height: 90,
+        fit: BoxFit.cover,
+        errorBuilder: (_, _, _) => _placeholder(),
+      );
+    }
+    if (path != null && !kIsWeb && File(path).existsSync()) {
       return Image.file(
         File(path),
         width: 90,
@@ -506,6 +516,11 @@ class _InventoryCard extends StatelessWidget {
       );
     }
     return _placeholder();
+  }
+
+  bool _isNetworkLikePath(String? path) {
+    if (path == null || path.isEmpty) return false;
+    return path.startsWith('http') || path.startsWith('data:');
   }
 
   Widget _placeholder() => Container(

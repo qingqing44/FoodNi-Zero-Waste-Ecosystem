@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
@@ -210,6 +211,7 @@ class _EditItemScreenState extends State<EditItemScreen> {
 
   Future<void> _deleteOldImageIfSafe(String? oldPath, String? newPath) async {
     if (oldPath == null || oldPath.isEmpty || oldPath == newPath) return;
+    if (kIsWeb || _isNetworkLikePath(oldPath)) return;
 
     try {
       final file = File(oldPath);
@@ -219,6 +221,11 @@ class _EditItemScreenState extends State<EditItemScreen> {
     } catch (_) {
       // Editing succeeded; stale local file cleanup is best effort only.
     }
+  }
+
+  bool _isNetworkLikePath(String? path) {
+    if (path == null || path.isEmpty) return false;
+    return path.startsWith('http') || path.startsWith('data:');
   }
 
   Future<void> _saveItem() async {
@@ -467,12 +474,20 @@ class _EditItemScreenState extends State<EditItemScreen> {
     if (_selectedImage != null) {
       return ClipRRect(
         borderRadius: BorderRadius.circular(16),
-        child: Image.file(File(_selectedImage!.path), fit: BoxFit.cover),
+        child: kIsWeb
+            ? Image.network(_selectedImage!.path, fit: BoxFit.cover)
+            : Image.file(File(_selectedImage!.path), fit: BoxFit.cover),
       );
     }
 
     final existingPath = _thumbnailPath ?? _localImagePath;
-    if (existingPath != null && File(existingPath).existsSync()) {
+    if (_isNetworkLikePath(existingPath)) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: Image.network(existingPath!, fit: BoxFit.cover),
+      );
+    }
+    if (existingPath != null && !kIsWeb && File(existingPath).existsSync()) {
       return ClipRRect(
         borderRadius: BorderRadius.circular(16),
         child: Image.file(File(existingPath), fit: BoxFit.cover),

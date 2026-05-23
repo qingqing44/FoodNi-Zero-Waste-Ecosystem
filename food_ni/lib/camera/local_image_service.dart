@@ -1,4 +1,7 @@
+import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
@@ -11,6 +14,12 @@ import 'package:path/path.dart' as p;
 ///   <appDocDir>/food_images/thumb_<timestamp>.jpg        ← compressed thumbnail (150×150)
 /// ```
 class LocalImageService {
+  /// Returns a web-safe data URL that can be rendered directly by Image.network
+  /// and stored without relying on a device file system.
+  String dataUrlFromBytes(Uint8List bytes, {String mimeType = 'image/jpeg'}) {
+    return 'data:$mimeType;base64,${base64Encode(bytes)}';
+  }
+
   /// Returns (imagePath, thumbnailPath).
   /// Throws an exception if the save operation fails.
   Future<({String imagePath, String thumbnailPath})> saveImage(
@@ -54,5 +63,19 @@ class LocalImageService {
     } catch (e) {
       throw Exception('Failed to save image locally: $e');
     }
+  }
+
+  /// Web has no writable local file path like mobile, so we keep the selected
+  /// image in a data URL that the UI and Firestore can both reuse.
+  Future<({String imagePath, String thumbnailPath})> saveWebImage(
+    Uint8List bytes, {
+    String mimeType = 'image/jpeg',
+  }) async {
+    if (!kIsWeb) {
+      throw Exception('saveWebImage should only be used on web.');
+    }
+
+    final dataUrl = dataUrlFromBytes(bytes, mimeType: mimeType);
+    return (imagePath: dataUrl, thumbnailPath: dataUrl);
   }
 }
