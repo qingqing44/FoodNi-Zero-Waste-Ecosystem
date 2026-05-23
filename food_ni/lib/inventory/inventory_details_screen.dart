@@ -3,6 +3,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import 'edit_item_screen.dart';
+
 class InventoryDetailsScreen extends StatefulWidget {
   final QueryDocumentSnapshot item;
 
@@ -24,14 +26,39 @@ class _InventoryDetailsScreenState extends State<InventoryDetailsScreen> {
     return Colors.grey;
   }
 
+  Future<void> _editItem() async {
+    final updated = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (context) => EditItemScreen(item: widget.item),
+      ),
+    );
+
+    if (!mounted || updated != true) return;
+
+    final messenger = ScaffoldMessenger.of(context);
+    Navigator.pop(context);
+    messenger.showSnackBar(
+      const SnackBar(content: Text('Item updated successfully')),
+    );
+  }
+
   // Method to handle item deletion from Firestore
   Future<void> _removeItem() async {
     // Show a confirmation dialog before deleting
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Remove Item', style: TextStyle(color: Color(0xFF052A1E), fontWeight: FontWeight.bold)),
-        content: Text('Are you sure you want to remove "${widget.item['foodName'] ?? 'this item'}" from your inventory?'),
+        title: const Text(
+          'Remove Item',
+          style: TextStyle(
+            color: Color(0xFF052A1E),
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        content: Text(
+          'Are you sure you want to remove "${widget.item['foodName'] ?? 'this item'}" from your inventory?',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -39,7 +66,10 @@ class _InventoryDetailsScreenState extends State<InventoryDetailsScreen> {
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Remove', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+            child: const Text(
+              'Remove',
+              style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
+            ),
           ),
         ],
       ),
@@ -59,19 +89,23 @@ class _InventoryDetailsScreenState extends State<InventoryDetailsScreen> {
           .delete();
 
       if (mounted) {
+        final messenger = ScaffoldMessenger.of(context);
         // Go back to the previous screen (Inventory List)
         Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
+        messenger.showSnackBar(
           const SnackBar(content: Text('Item successfully removed')),
         );
       }
     } catch (e) {
-      setState(() {
-        _isDeleting = false;
-      });
       if (mounted) {
+        setState(() {
+          _isDeleting = false;
+        });
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to delete item: $e'), backgroundColor: Colors.redAccent),
+          SnackBar(
+            content: Text('Failed to delete item: $e'),
+            backgroundColor: Colors.redAccent,
+          ),
         );
       }
     }
@@ -86,8 +120,11 @@ class _InventoryDetailsScreenState extends State<InventoryDetailsScreen> {
     final String category = data['category'] ?? 'Uncategorized';
     final String quantity = data['quantity'] ?? '1 unit';
     final String expiryDate = data['expiryDate'] ?? 'N/A';
-    final String storageSuggestion = data['storageSuggestion'] ?? 'No special storage suggestions provided.';
-    final String? thumbPath = (data['thumbnailPath'] as String?) ?? (data['localImagePath'] as String?);
+    final String storageSuggestion =
+        data['storageSuggestion'] ?? 'No special storage suggestions provided.';
+    final String? thumbPath =
+        (data['thumbnailPath'] as String?) ??
+        (data['localImagePath'] as String?);
     int daysRemaining = (data['estimatedDaysRemaining'] as num?)?.toInt() ?? 0;
     String freshnessStatus = data['freshnessStatus'] ?? 'Unknown';
 
@@ -96,13 +133,17 @@ class _InventoryDetailsScreenState extends State<InventoryDetailsScreen> {
         // Parse the 'MMM dd, yyyy' string template back into an active DateTime timeline object
         DateTime expiryParsed = DateFormat('MMM dd, yyyy').parse(expiryDate);
         DateTime today = DateTime.now();
-        
+
         DateTime cleanToday = DateTime(today.year, today.month, today.day);
-        DateTime cleanExpiry = DateTime(expiryParsed.year, expiryParsed.month, expiryParsed.day);
-        
+        DateTime cleanExpiry = DateTime(
+          expiryParsed.year,
+          expiryParsed.month,
+          expiryParsed.day,
+        );
+
         // Calculate real day difference cleanly
         daysRemaining = cleanExpiry.difference(cleanToday).inDays;
-        
+
         if (daysRemaining <= 0) {
           freshnessStatus = 'Spoiled';
         } else if (daysRemaining <= 3) {
@@ -128,6 +169,13 @@ class _InventoryDetailsScreenState extends State<InventoryDetailsScreen> {
             fontWeight: FontWeight.bold,
           ),
         ),
+        actions: [
+          IconButton(
+            onPressed: _isDeleting ? null : _editItem,
+            icon: const Icon(Icons.edit_outlined),
+            tooltip: 'Edit item',
+          ),
+        ],
       ),
       body: _isDeleting
           ? const Center(child: CircularProgressIndicator(color: primaryColor))
@@ -147,19 +195,26 @@ class _InventoryDetailsScreenState extends State<InventoryDetailsScreen> {
                         border: Border.all(color: const Color(0xFFF0F0F0)),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withOpacity(0.05),
+                            color: Colors.black.withValues(alpha: 0.05),
                             blurRadius: 10,
                             offset: const Offset(0, 4),
-                          )
+                          ),
                         ],
                       ),
                       child: thumbPath != null && File(thumbPath).existsSync()
                           ? ClipRRect(
                               borderRadius: BorderRadius.circular(16),
-                              child: Image.file(File(thumbPath), fit: BoxFit.cover),
+                              child: Image.file(
+                                File(thumbPath),
+                                fit: BoxFit.cover,
+                              ),
                             )
                           : const Center(
-                              child: Icon(Icons.fastfood, size: 64, color: Colors.grey),
+                              child: Icon(
+                                Icons.fastfood,
+                                size: 64,
+                                color: Colors.grey,
+                              ),
                             ),
                     ),
                   ),
@@ -178,13 +233,22 @@ class _InventoryDetailsScreenState extends State<InventoryDetailsScreen> {
                       children: [
                         const Text(
                           'Freshness Status',
-                          style: TextStyle(fontWeight: FontWeight.bold, color: primaryColor, fontSize: 16),
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: primaryColor,
+                            fontSize: 16,
+                          ),
                         ),
                         if (freshnessStatus.isNotEmpty)
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 6,
+                            ),
                             decoration: BoxDecoration(
-                              color: _statusColor(freshnessStatus).withOpacity(0.15),
+                              color: _statusColor(
+                                freshnessStatus,
+                              ).withValues(alpha: 0.15),
                               borderRadius: BorderRadius.circular(8),
                             ),
                             child: Text(
@@ -215,13 +279,21 @@ class _InventoryDetailsScreenState extends State<InventoryDetailsScreen> {
                         const Divider(height: 24, color: Color(0xFFF0F0F0)),
                         _buildDetailRow(Icons.scale, 'Quantity', quantity),
                         const Divider(height: 24, color: Color(0xFFF0F0F0)),
-                        _buildDetailRow(Icons.calendar_today, 'Expiry Date', expiryDate),
+                        _buildDetailRow(
+                          Icons.calendar_today,
+                          'Expiry Date',
+                          expiryDate,
+                        ),
                         const Divider(height: 24, color: Color(0xFFF0F0F0)),
                         _buildDetailRow(
-                          Icons.hourglass_bottom, 
-                          'Days Remaining', 
-                          daysRemaining >= 0 ? '$daysRemaining days left' : 'Expired',
-                          valueColor: daysRemaining <= 3 ? Colors.red : const Color(0xFF34A853),
+                          Icons.hourglass_bottom,
+                          'Days Remaining',
+                          daysRemaining >= 0
+                              ? '$daysRemaining days left'
+                              : 'Expired',
+                          valueColor: daysRemaining <= 3
+                              ? Colors.red
+                              : const Color(0xFF34A853),
                         ),
                       ],
                     ),
@@ -241,18 +313,30 @@ class _InventoryDetailsScreenState extends State<InventoryDetailsScreen> {
                       children: [
                         const Row(
                           children: [
-                            Icon(Icons.kitchen, color: Color(0xFF34A853), size: 20),
+                            Icon(
+                              Icons.kitchen,
+                              color: Color(0xFF34A853),
+                              size: 20,
+                            ),
                             SizedBox(width: 8),
                             Text(
                               'Storage Suggestion',
-                              style: TextStyle(fontWeight: FontWeight.bold, color: primaryColor, fontSize: 16),
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: primaryColor,
+                                fontSize: 16,
+                              ),
                             ),
                           ],
                         ),
                         const SizedBox(height: 12),
                         Text(
                           storageSuggestion,
-                          style: const TextStyle(color: Color(0xFF666666), fontSize: 14, height: 1.4),
+                          style: const TextStyle(
+                            color: Color(0xFF666666),
+                            fontSize: 14,
+                            height: 1.4,
+                          ),
                         ),
                       ],
                     ),
@@ -287,7 +371,12 @@ class _InventoryDetailsScreenState extends State<InventoryDetailsScreen> {
     );
   }
 
-  Widget _buildDetailRow(IconData icon, String label, String value, {Color? valueColor}) {
+  Widget _buildDetailRow(
+    IconData icon,
+    String label,
+    String value, {
+    Color? valueColor,
+  }) {
     return Row(
       children: [
         Icon(icon, color: const Color(0xFF34A853), size: 20),
