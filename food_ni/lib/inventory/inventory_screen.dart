@@ -10,8 +10,24 @@ import 'inventory_details_screen.dart';
 
 /// Displays the current user's scanned food inventory from Firestore.
 /// Images are loaded from the local device path stored in [thumbnailPath].
-class InventoryScreen extends StatelessWidget {
+class InventoryScreen extends StatefulWidget {
   const InventoryScreen({super.key});
+
+  @override
+  State<InventoryScreen> createState() => _InventoryScreenState();
+}
+
+class _InventoryScreenState extends State<InventoryScreen> {
+  final _searchController = TextEditingController();
+  String _searchQuery = '';
+  String _selectedCategory = 'All';
+  String _selectedStatus = 'All';
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
 
   // ---------------------------------------------------------------------------
   // Freshness badge colour helpers (consistent with FoodDetailsScreen)
@@ -27,6 +43,168 @@ class InventoryScreen extends StatelessWidget {
   }
 
   // ---------------------------------------------------------------------------
+
+  bool _matchesFilters(QueryDocumentSnapshot doc) {
+    final data = doc.data() as Map<String, dynamic>;
+    final foodName = (data['foodName'] as String? ?? '').toLowerCase();
+    final category = data['category'] as String? ?? '';
+    final freshnessStatus = data['freshnessStatus'] as String? ?? '';
+    final query = _searchQuery.trim().toLowerCase();
+
+    final matchesSearch =
+        query.isEmpty ||
+        foodName.contains(query) ||
+        category.toLowerCase().contains(query) ||
+        freshnessStatus.toLowerCase().contains(query);
+    final matchesCategory =
+        _selectedCategory == 'All' || category == _selectedCategory;
+    final matchesStatus =
+        _selectedStatus == 'All' || freshnessStatus == _selectedStatus;
+
+    return matchesSearch && matchesCategory && matchesStatus;
+  }
+
+  List<String> _filterOptions(List<QueryDocumentSnapshot> docs, String field) {
+    final options =
+        docs
+            .map(
+              (doc) => (doc.data() as Map<String, dynamic>)[field] as String?,
+            )
+            .where((value) => value != null && value.trim().isNotEmpty)
+            .cast<String>()
+            .toSet()
+            .toList()
+          ..sort();
+    return ['All', ...options];
+  }
+
+  void _clearFilters() {
+    setState(() {
+      _searchQuery = '';
+      _selectedCategory = 'All';
+      _selectedStatus = 'All';
+      _searchController.clear();
+    });
+  }
+
+  Widget _buildSearchAndFilters({
+    required List<String> categories,
+    required List<String> statuses,
+  }) {
+    if (!categories.contains(_selectedCategory)) {
+      _selectedCategory = 'All';
+    }
+    if (!statuses.contains(_selectedStatus)) {
+      _selectedStatus = 'All';
+    }
+
+    final hasActiveFilters =
+        _searchQuery.trim().isNotEmpty ||
+        _selectedCategory != 'All' ||
+        _selectedStatus != 'All';
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      child: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFF0F0F0)),
+            ),
+            child: TextField(
+              controller: _searchController,
+              onChanged: (value) => setState(() => _searchQuery = value),
+              decoration: const InputDecoration(
+                icon: Icon(Icons.search, color: Colors.grey),
+                hintText: 'Search food items...',
+                hintStyle: TextStyle(color: Colors.grey, fontSize: 14),
+                border: InputBorder.none,
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: _buildFilterDropdown(
+                  value: _selectedCategory,
+                  items: categories,
+                  icon: Icons.category_outlined,
+                  onChanged: (value) =>
+                      setState(() => _selectedCategory = value ?? 'All'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _buildFilterDropdown(
+                  value: _selectedStatus,
+                  items: statuses,
+                  icon: Icons.eco_outlined,
+                  onChanged: (value) =>
+                      setState(() => _selectedStatus = value ?? 'All'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              IconButton(
+                onPressed: hasActiveFilters ? _clearFilters : null,
+                icon: const Icon(Icons.refresh),
+                color: const Color(0xFF052A1E),
+                tooltip: 'Clear filters',
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFilterDropdown({
+    required String value,
+    required List<String> items,
+    required IconData icon,
+    required ValueChanged<String?> onChanged,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFF0F0F0)),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          value: value,
+          isExpanded: true,
+          icon: const Icon(Icons.keyboard_arrow_down, color: Color(0xFF052A1E)),
+          items: items.map((item) {
+            return DropdownMenuItem(
+              value: item,
+              child: Row(
+                children: [
+                  Icon(icon, size: 16, color: const Color(0xFF34A853)),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      item,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Color(0xFF052A1E),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }).toList(),
+          onChanged: onChanged,
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -87,26 +265,73 @@ class InventoryScreen extends StatelessWidget {
             );
           }
 
-          return ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: docs.length,
-            itemBuilder: (context, index) {
-              final doc = docs[index]; 
-              final data = doc.data() as Map<String, dynamic>;
+          final categories = _filterOptions(docs, 'category');
+          final statuses = _filterOptions(docs, 'freshnessStatus');
+          final filteredDocs = docs.where(_matchesFilters).toList();
 
-              return InkWell(
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => InventoryDetailsScreen(item: doc),
-                    ),
-                  );
-                },
-                borderRadius: BorderRadius.circular(16),
-                child: _InventoryCard(data: data, statusColor: _statusColor),
-              );
-            },
+          return Column(
+            children: [
+              _buildSearchAndFilters(
+                categories: categories,
+                statuses: statuses,
+              ),
+              Expanded(
+                child: filteredDocs.isEmpty
+                    ? Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(
+                              Icons.search_off,
+                              size: 56,
+                              color: Colors.grey,
+                            ),
+                            const SizedBox(height: 12),
+                            const Text(
+                              'No matching food items found',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: Color(0xFF666666),
+                                fontSize: 16,
+                              ),
+                            ),
+                            TextButton(
+                              onPressed: _clearFilters,
+                              child: const Text(
+                                'Clear search and filters',
+                                style: TextStyle(color: Color(0xFF34A853)),
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                    : ListView.builder(
+                        padding: const EdgeInsets.all(16),
+                        itemCount: filteredDocs.length,
+                        itemBuilder: (context, index) {
+                          final doc = filteredDocs[index];
+                          final data = doc.data() as Map<String, dynamic>;
+
+                          return InkWell(
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) =>
+                                      InventoryDetailsScreen(item: doc),
+                                ),
+                              );
+                            },
+                            borderRadius: BorderRadius.circular(16),
+                            child: _InventoryCard(
+                              data: data,
+                              statusColor: _statusColor,
+                            ),
+                          );
+                        },
+                      ),
+              ),
+            ],
           );
         },
       ),
@@ -128,10 +353,7 @@ class InventoryScreen extends StatelessWidget {
 
 /// A single inventory card that shows the thumbnail, food name, freshness badge, category chip and estimated days remaining.
 class _InventoryCard extends StatelessWidget {
-  const _InventoryCard({
-    required this.data,
-    required this.statusColor,
-  });
+  const _InventoryCard({required this.data, required this.statusColor});
 
   final Map<String, dynamic> data;
   final Color Function(String?) statusColor;
@@ -143,17 +365,28 @@ class _InventoryCard extends StatelessWidget {
     final freshnessStatus = data['freshnessStatus'] as String? ?? '';
     final freshnessScore = (data['freshnessScore'] as num?)?.toInt() ?? 0;
     final String expiryDate = data['expiryDate'] ?? 'N/A';
-    int estimatedDaysRemaining = (data['estimatedDaysRemaining'] as num?)?.toInt() ?? 0;
-    final thumbPath = (data['thumbnailPath'] as String?) ?? (data['localImagePath'] as String?);
+    int estimatedDaysRemaining =
+        (data['estimatedDaysRemaining'] as num?)?.toInt() ?? 0;
+    final thumbPath =
+        (data['thumbnailPath'] as String?) ??
+        (data['localImagePath'] as String?);
 
     final color = statusColor(freshnessStatus);
 
-    DateTime expiryParsed = DateFormat('MMM dd, yyyy').parse(expiryDate);
-    DateTime today = DateTime.now();
+    try {
+      final expiryParsed = DateFormat('MMM dd, yyyy').parse(expiryDate);
+      final today = DateTime.now();
 
-    DateTime cleanToday = DateTime(today.year, today.month, today.day);
-    DateTime cleanExpiry = DateTime(expiryParsed.year, expiryParsed.month, expiryParsed.day);
-    estimatedDaysRemaining = cleanExpiry.difference(cleanToday).inDays;
+      final cleanToday = DateTime(today.year, today.month, today.day);
+      final cleanExpiry = DateTime(
+        expiryParsed.year,
+        expiryParsed.month,
+        expiryParsed.day,
+      );
+      estimatedDaysRemaining = cleanExpiry.difference(cleanToday).inDays;
+    } catch (_) {
+      // Keep the stored estimate if the legacy expiry value cannot be parsed.
+    }
 
     return Card(
       margin: const EdgeInsets.only(bottom: 14),
@@ -194,11 +427,13 @@ class _InventoryCard extends StatelessWidget {
                   if (freshnessStatus.isNotEmpty)
                     Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 3),
+                        horizontal: 10,
+                        vertical: 3,
+                      ),
                       decoration: BoxDecoration(
-                        color: color.withOpacity(0.12),
+                        color: color.withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: color.withOpacity(0.3)),
+                        border: Border.all(color: color.withValues(alpha: 0.3)),
                       ),
                       child: Text(
                         '$freshnessStatus  •  $freshnessScore/100',
@@ -214,8 +449,11 @@ class _InventoryCard extends StatelessWidget {
                   // Days remaining
                   Row(
                     children: [
-                      Icon(Icons.access_time_rounded,
-                          size: 13, color: Colors.grey.shade500),
+                      Icon(
+                        Icons.access_time_rounded,
+                        size: 13,
+                        color: Colors.grey.shade500,
+                      ),
                       const SizedBox(width: 4),
                       Text(
                         '$estimatedDaysRemaining day${estimatedDaysRemaining == 1 ? '' : 's'} remaining',
@@ -232,7 +470,9 @@ class _InventoryCard extends StatelessWidget {
                   if (category.isNotEmpty)
                     Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 2),
+                        horizontal: 8,
+                        vertical: 2,
+                      ),
                       decoration: BoxDecoration(
                         color: const Color(0xFFE8F3EF),
                         borderRadius: BorderRadius.circular(8),
@@ -262,16 +502,16 @@ class _InventoryCard extends StatelessWidget {
         width: 90,
         height: 90,
         fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) => _placeholder(),
+        errorBuilder: (_, _, _) => _placeholder(),
       );
     }
     return _placeholder();
   }
 
   Widget _placeholder() => Container(
-        width: 90,
-        height: 90,
-        color: Colors.grey[200],
-        child: const Icon(Icons.fastfood, color: Colors.grey),
-      );
+    width: 90,
+    height: 90,
+    color: Colors.grey[200],
+    child: const Icon(Icons.fastfood, color: Colors.grey),
+  );
 }
