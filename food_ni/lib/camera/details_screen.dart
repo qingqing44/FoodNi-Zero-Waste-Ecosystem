@@ -6,6 +6,8 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import '../storage/storage_guide_screen.dart';
+
 /// Displays the Gemini analysis result for a scanned food item and lets the
 /// user save it to their Firestore inventory or discard it.
 class FoodDetailsScreen extends StatefulWidget {
@@ -245,6 +247,11 @@ class _FoodDetailsScreenState extends State<FoodDetailsScreen> {
             ),
             const SizedBox(height: 12),
             _buildRecipesCard(basicRecipes),
+            const SizedBox(height: 12),
+            if (freshnessStatus.toLowerCase() == 'spoiled')
+              _buildSpoiledWarningCard()
+            else
+              _buildStorageGuideCard(foodName, category),
           ],
         ),
       ),
@@ -408,6 +415,129 @@ class _FoodDetailsScreenState extends State<FoodDetailsScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildSpoiledWarningCard() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.red.shade50,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.red.shade200),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              Icons.warning_amber_rounded,
+              color: Colors.red.shade400,
+              size: 22,
+            ),
+          ),
+          const SizedBox(width: 14),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Food is Spoiled',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.red,
+                  ),
+                ),
+                SizedBox(height: 2),
+                Text(
+                  'This food should not be stored or consumed. Please discard it.',
+                  style: TextStyle(fontSize: 13, color: Colors.red),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStorageGuideCard(String foodName, String category) {
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => StorageGuideScreen(
+              foodName: foodName,
+              category: category,
+            ),
+          ),
+        );
+      },
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: const Color(0xFFE8F3EF),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFF34A853).withOpacity(0.3)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.06),
+                    blurRadius: 8,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
+              ),
+              child: const Icon(
+                Icons.thermostat_rounded,
+                color: Color(0xFF34A853),
+                size: 22,
+              ),
+            ),
+            const SizedBox(width: 14),
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Storage Guide',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF052A1E),
+                    ),
+                  ),
+                  SizedBox(height: 2),
+                  Text(
+                    'Ideal temperatures & storage techniques',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Colors.grey,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(
+              Icons.chevron_right_rounded,
+              color: Color(0xFF34A853),
+            ),
+          ],
+        ),
       ),
     );
   }

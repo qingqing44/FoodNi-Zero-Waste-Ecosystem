@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import 'edit_item_screen.dart';
+import '../storage/storage_guide_screen.dart';
 
 class InventoryDetailsScreen extends StatefulWidget {
   final QueryDocumentSnapshot item;
@@ -126,8 +127,6 @@ class _InventoryDetailsScreenState extends State<InventoryDetailsScreen> {
     final String category = data['category'] ?? 'Uncategorized';
     final String quantity = data['quantity'] ?? '1 unit';
     final String expiryDate = data['expiryDate'] ?? 'N/A';
-    final String storageSuggestion =
-        data['storageSuggestion'] ?? 'No special storage suggestions provided.';
     final String? thumbPath =
         (data['thumbnailPath'] as String?) ??
         (data['localImagePath'] as String?);
@@ -321,48 +320,83 @@ class _InventoryDetailsScreenState extends State<InventoryDetailsScreen> {
                   ),
                   const SizedBox(height: 20),
 
-                  // Storage Suggestions Block
-                  Container(
-                    padding: const EdgeInsets.all(20),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: const Color(0xFFF0F0F0)),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Row(
-                          children: [
-                            Icon(
-                              Icons.kitchen,
-                              color: Color(0xFF34A853),
-                              size: 20,
+                  const SizedBox(height: 4),
+
+                  // ── Storage Guide or Spoiled Warning ──────────────────────
+                  if (freshnessStatus.toLowerCase() == 'spoiled')
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.red.shade50,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: Colors.red.shade200),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.warning_amber_rounded,
+                              color: Colors.red.shade400, size: 28),
+                          const SizedBox(width: 12),
+                          const Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Food is Spoiled',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.red,
+                                    fontSize: 15,
+                                  ),
+                                ),
+                                SizedBox(height: 4),
+                                Text(
+                                  'This item should not be stored or consumed. Please discard it.',
+                                  style: TextStyle(
+                                    color: Colors.red,
+                                    fontSize: 13,
+                                    height: 1.4,
+                                  ),
+                                ),
+                              ],
                             ),
-                            SizedBox(width: 8),
-                            Text(
-                              'Storage Suggestion',
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                color: primaryColor,
-                                fontSize: 16,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                        Text(
-                          storageSuggestion,
-                          style: const TextStyle(
-                            color: Color(0xFF666666),
-                            fontSize: 14,
-                            height: 1.4,
                           ),
+                        ],
+                      ),
+                    )
+                  else
+                    OutlinedButton.icon(
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => StorageGuideScreen(
+                              foodName: foodName,
+                              category: category,
+                            ),
+                          ),
+                        );
+                      },
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        side: const BorderSide(color: Color(0xFF34A853)),
+                        foregroundColor: const Color(0xFF052A1E),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
                         ),
-                      ],
+                      ),
+                      icon: const Icon(
+                        Icons.thermostat_rounded,
+                        color: Color(0xFF34A853),
+                      ),
+                      label: const Text(
+                        'View Storage Guide',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 32),
+                  const SizedBox(height: 12),
 
                   // ── Remove Button ──────────────────────────────────────────
                   ElevatedButton.icon(

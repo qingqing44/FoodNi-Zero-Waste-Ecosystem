@@ -19,7 +19,6 @@ class _AddItemScreenState extends State<AddItemScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _quantityController = TextEditingController(text: '1');
-  final _storageController = TextEditingController();
   
   String? _selectedCategory;
   String _selectedUnit = 'Unit';
@@ -35,7 +34,6 @@ class _AddItemScreenState extends State<AddItemScreen> {
   void dispose() {
     _nameController.dispose();
     _quantityController.dispose();
-    _storageController.dispose();
     super.dispose();
   }
 
@@ -161,9 +159,7 @@ class _AddItemScreenState extends State<AddItemScreen> {
         'expiryDate': formattedDate,
         'category': _selectedCategory ?? 'Uncategorized',
         'quantity': quantityDisplay,
-        'storageSuggestion': _storageController.text.trim().isNotEmpty 
-            ? _storageController.text.trim() 
-            : 'No storage suggestion provided.',
+        'storageSuggestion': 'See Storage Guide for details.',
         'thumbnailPath': downloadUrl,
         'localImagePath': downloadUrl,
         'freshnessStatus': daysRemaining > 3 ? 'Fresh' : (daysRemaining >= 0 ? 'Good' : 'Spoiled'),
@@ -341,14 +337,8 @@ class _AddItemScreenState extends State<AddItemScreen> {
                     ),
                     const SizedBox(height: 20),
                     
-                    _buildTextField(
-                      controller: _storageController,
-                      label: 'Storage Suggestion (Optional)',
-                      icon: Icons.kitchen,
-                      maxLines: 3,
-                    ),
-                    const SizedBox(height: 40),
-                    
+                    const SizedBox(height: 32),
+
                     ElevatedButton(
                       onPressed: _saveItem,
                       style: ElevatedButton.styleFrom(

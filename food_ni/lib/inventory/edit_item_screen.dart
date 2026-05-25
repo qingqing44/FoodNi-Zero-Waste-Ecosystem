@@ -21,7 +21,6 @@ class _EditItemScreenState extends State<EditItemScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _quantityController = TextEditingController();
-  final _storageController = TextEditingController();
   final _picker = ImagePicker();
   final _localImageService = LocalImageService();
 
@@ -61,7 +60,6 @@ class _EditItemScreenState extends State<EditItemScreen> {
     final data = widget.item.data() as Map<String, dynamic>;
     _nameController.text = data['foodName'] as String? ?? '';
     _selectedCategory = data['category'] as String? ?? 'Uncategorized';
-    _storageController.text = data['storageSuggestion'] as String? ?? '';
     _localImagePath = data['localImagePath'] as String?;
     _thumbnailPath = data['thumbnailPath'] as String?;
     _selectedDate = _parseExpiryDate(data['expiryDate'] as String?);
@@ -72,7 +70,6 @@ class _EditItemScreenState extends State<EditItemScreen> {
   void dispose() {
     _nameController.dispose();
     _quantityController.dispose();
-    _storageController.dispose();
     super.dispose();
   }
 
@@ -267,9 +264,6 @@ class _EditItemScreenState extends State<EditItemScreen> {
         'category': _selectedCategory ?? 'Uncategorized',
         'quantity': quantityDisplay,
         'expiryDate': formattedDate,
-        'storageSuggestion': _storageController.text.trim().isNotEmpty
-            ? _storageController.text.trim()
-            : 'No storage suggestion provided.',
         'estimatedDaysRemaining': daysRemaining,
         'freshnessStatus': _freshnessStatusFor(daysRemaining),
         'freshnessScore': _freshnessScoreFor(daysRemaining),
@@ -437,14 +431,7 @@ class _EditItemScreenState extends State<EditItemScreen> {
                         ),
                       ),
                     ),
-                    const SizedBox(height: 20),
-                    _buildTextField(
-                      controller: _storageController,
-                      label: 'Storage Suggestion (Optional)',
-                      icon: Icons.kitchen,
-                      maxLines: 3,
-                    ),
-                    const SizedBox(height: 40),
+                    const SizedBox(height: 32),
                     ElevatedButton(
                       onPressed: _saveItem,
                       style: ElevatedButton.styleFrom(
