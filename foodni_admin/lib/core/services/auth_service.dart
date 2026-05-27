@@ -34,6 +34,7 @@ class AuthService {
       await _auth.signOut();
       return 'Access Denied: You do not have admin privileges.';
     }
+    return null;
   }
 
   Future<String?> sendPasswordResetEmail(String email) async {

@@ -23,7 +23,7 @@ class UserManagementView extends StatelessWidget {
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(16),
-                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 10)],
+                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.02), blurRadius: 10)],
               ),
               child: StreamBuilder<List<UserModel>>(
                 stream: dashboardService.getUsersStream(),
@@ -46,7 +46,7 @@ class UserManagementView extends StatelessWidget {
                         DataColumn(label: Text('Actions', style: TextStyle(fontWeight: FontWeight.bold))),
                       ],
                       rows: users.map((user) => DataRow(cells: [
-                        DataCell(Text(user.uid.substring(0, 8) + '...')),
+                        DataCell(Text('${user.uid.substring(0, 8)}...')),
                         DataCell(Text(user.email)),
                         DataCell(
                           Container(
