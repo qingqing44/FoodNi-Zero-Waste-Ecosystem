@@ -30,6 +30,14 @@
           }
         },
         {
+          "client_id": "599901055825-uetgcqa6bucuei06u43fv4hefev4rvr4.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.food_ni",
+            "certificate_hash": "f8aa4f90fcbd6b486e77305a086cac0b800a1152"
+          }
+        },
+        {
           "client_id": "599901055825-u3im4t71dc6adlvguikbgufduf726bar.apps.googleusercontent.com",
           "client_type": 3
         }

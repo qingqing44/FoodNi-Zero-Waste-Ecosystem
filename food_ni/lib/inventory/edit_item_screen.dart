@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -5,6 +6,8 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:path/path.dart' as p;
 
 import '../camera/local_image_service.dart';
 
@@ -222,7 +225,7 @@ class _EditItemScreenState extends State<EditItemScreen> {
 
   bool _isNetworkLikePath(String? path) {
     if (path == null || path.isEmpty) return false;
-    return path.startsWith('http') || path.startsWith('data:');
+    return path.startsWith('http') || path.startsWith('data:') || path.startsWith('blob:');
   }
 
   Future<void> _saveItem() async {
@@ -246,11 +249,18 @@ class _EditItemScreenState extends State<EditItemScreen> {
       String? nextThumbnailPath = _thumbnailPath;
 
       if (_selectedImage != null) {
-        final savedImage = await _localImageService.saveImage(
-          File(_selectedImage!.path),
-        );
-        nextLocalImagePath = savedImage.imagePath;
-        nextThumbnailPath = savedImage.thumbnailPath;
+        if (kIsWeb) {
+          final bytes = await _selectedImage!.readAsBytes();
+          final dataUrl = 'data:image/jpeg;base64,${base64Encode(bytes)}';
+          nextLocalImagePath = dataUrl;
+          nextThumbnailPath = dataUrl;
+        } else {
+          final savedImage = await _localImageService.saveImage(
+            File(_selectedImage!.path),
+          );
+          nextLocalImagePath = savedImage.imagePath;
+          nextThumbnailPath = savedImage.thumbnailPath;
+        }
       }
 
       final formattedDate = DateFormat('MMM dd, yyyy').format(_selectedDate!);
@@ -471,16 +481,51 @@ class _EditItemScreenState extends State<EditItemScreen> {
     if (_isNetworkLikePath(existingPath)) {
       return ClipRRect(
         borderRadius: BorderRadius.circular(16),
-        child: Image.network(existingPath!, fit: BoxFit.cover),
+        child: Image.network(
+          existingPath!,
+          fit: BoxFit.cover,
+          errorBuilder: (_, _, _) => _placeholderEditPreview(),
+        ),
       );
     }
-    if (existingPath != null && !kIsWeb && File(existingPath).existsSync()) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(16),
-        child: Image.file(File(existingPath), fit: BoxFit.cover),
+    if (existingPath != null && !kIsWeb) {
+      final file = File(existingPath);
+      if (file.existsSync()) {
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: Image.file(file, fit: BoxFit.cover),
+        );
+      }
+
+      // Fallback: try to resolve path dynamically relative to current App Documents Directory
+      return FutureBuilder<Directory>(
+        future: getApplicationDocumentsDirectory(),
+        builder: (context, snapshot) {
+          if (snapshot.hasData) {
+            final appDir = snapshot.data!;
+            String? filename;
+            if (existingPath.contains('food_images')) {
+              filename = existingPath.substring(existingPath.indexOf('food_images'));
+            } else {
+              filename = p.join('food_images', p.basename(existingPath));
+            }
+            final resolvedFile = File(p.join(appDir.path, filename));
+            if (resolvedFile.existsSync()) {
+              return ClipRRect(
+                borderRadius: BorderRadius.circular(16),
+                child: Image.file(resolvedFile, fit: BoxFit.cover),
+              );
+            }
+          }
+          return _placeholderEditPreview();
+        },
       );
     }
 
+    return _placeholderEditPreview();
+  }
+
+  Widget _placeholderEditPreview() {
     return const Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [

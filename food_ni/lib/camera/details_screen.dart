@@ -35,7 +35,7 @@ class _FoodDetailsScreenState extends State<FoodDetailsScreen> {
     return Colors.grey;
   }
 
-  Color _statusBg(String status) => _statusColor(status).withOpacity(0.12);
+  Color _statusBg(String status) => _statusColor(status).withValues(alpha: 0.12);
 
   // ---------------------------------------------------------------------------
   // Firestore save
@@ -330,7 +330,7 @@ class _FoodDetailsScreenState extends State<FoodDetailsScreen> {
       decoration: BoxDecoration(
         color: bg,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: color.withOpacity(0.3)),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
       ),
       child: Row(
         children: [
@@ -349,7 +349,7 @@ class _FoodDetailsScreenState extends State<FoodDetailsScreen> {
               ),
               Text(
                 'Freshness score: $score / 100',
-                style: TextStyle(fontSize: 13, color: color.withOpacity(0.8)),
+                style: TextStyle(fontSize: 13, color: color.withValues(alpha: 0.8)),
               ),
             ],
           ),
@@ -381,7 +381,7 @@ class _FoodDetailsScreenState extends State<FoodDetailsScreen> {
               shape: BoxShape.circle,
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.06),
+                  color: Colors.black.withValues(alpha: 0.06),
                   blurRadius: 8,
                   offset: const Offset(0, 3),
                 ),
@@ -485,7 +485,7 @@ class _FoodDetailsScreenState extends State<FoodDetailsScreen> {
         decoration: BoxDecoration(
           color: const Color(0xFFE8F3EF),
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: const Color(0xFF34A853).withOpacity(0.3)),
+          border: Border.all(color: const Color(0xFF34A853).withValues(alpha: 0.3)),
         ),
         child: Row(
           children: [
@@ -496,7 +496,7 @@ class _FoodDetailsScreenState extends State<FoodDetailsScreen> {
                 shape: BoxShape.circle,
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.06),
+                    color: Colors.black.withValues(alpha: 0.06),
                     blurRadius: 8,
                     offset: const Offset(0, 3),
                   ),
