@@ -5,6 +5,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:path/path.dart' as p;
 
 import 'add_item_screen.dart';
 import 'inventory_details_screen.dart';
@@ -506,13 +508,43 @@ class _InventoryCard extends StatelessWidget {
         errorBuilder: (_, _, _) => _placeholder(),
       );
     }
-    if (path != null && !kIsWeb && File(path).existsSync()) {
-      return Image.file(
-        File(path),
-        width: 90,
-        height: 90,
-        fit: BoxFit.cover,
-        errorBuilder: (_, _, _) => _placeholder(),
+    if (path != null && !kIsWeb) {
+      final file = File(path);
+      if (file.existsSync()) {
+        return Image.file(
+          file,
+          width: 90,
+          height: 90,
+          fit: BoxFit.cover,
+          errorBuilder: (_, _, _) => _placeholder(),
+        );
+      }
+
+      // Fallback: try to resolve path dynamically relative to current App Documents Directory
+      return FutureBuilder<Directory>(
+        future: getApplicationDocumentsDirectory(),
+        builder: (context, snapshot) {
+          if (snapshot.hasData) {
+            final appDir = snapshot.data!;
+            String? filename;
+            if (path.contains('food_images')) {
+              filename = path.substring(path.indexOf('food_images'));
+            } else {
+              filename = p.join('food_images', p.basename(path));
+            }
+            final resolvedFile = File(p.join(appDir.path, filename));
+            if (resolvedFile.existsSync()) {
+              return Image.file(
+                resolvedFile,
+                width: 90,
+                height: 90,
+                fit: BoxFit.cover,
+                errorBuilder: (_, _, _) => _placeholder(),
+              );
+            }
+          }
+          return _placeholder();
+        },
       );
     }
     return _placeholder();
@@ -520,7 +552,7 @@ class _InventoryCard extends StatelessWidget {
 
   bool _isNetworkLikePath(String? path) {
     if (path == null || path.isEmpty) return false;
-    return path.startsWith('http') || path.startsWith('data:');
+    return path.startsWith('http') || path.startsWith('data:') || path.startsWith('blob:');
   }
 
   Widget _placeholder() => Container(

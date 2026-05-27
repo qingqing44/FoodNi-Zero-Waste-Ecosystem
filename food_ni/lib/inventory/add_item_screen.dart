@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -135,7 +136,8 @@ class _AddItemScreenState extends State<AddItemScreen> {
 
       if (_selectedImage != null) {
         if (kIsWeb) {
-          downloadUrl = _selectedImage!.path;
+          final bytes = await _selectedImage!.readAsBytes();
+          downloadUrl = 'data:image/jpeg;base64,${base64Encode(bytes)}';
         } else {
           final appDir = await getApplicationDocumentsDirectory();
           final foodDir = Directory(p.join(appDir.path, 'food_images'));
@@ -227,7 +229,7 @@ class _AddItemScreenState extends State<AddItemScreen> {
                             border: Border.all(color: const Color(0xFFF0F0F0)),
                             boxShadow: [
                               BoxShadow(
-                                color: Colors.black.withOpacity(0.05),
+                                color: Colors.black.withValues(alpha: 0.05),
                                 blurRadius: 10,
                                 offset: const Offset(0, 4),
                               )
@@ -415,7 +417,7 @@ class _AddItemScreenState extends State<AddItemScreen> {
     String? Function(String?)? validator,
   }) {
     return DropdownButtonFormField<String>(
-      value: value,
+      initialValue: value,
       hint: Text(hint, style: const TextStyle(color: Color(0xFF666666), fontSize: 14)),
       onChanged: onChanged,
       validator: validator,

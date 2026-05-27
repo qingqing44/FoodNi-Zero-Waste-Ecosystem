@@ -3,6 +3,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:path/path.dart' as p;
 
 import 'edit_item_screen.dart';
 import '../storage/storage_guide_screen.dart';
@@ -30,7 +32,7 @@ class _InventoryDetailsScreenState extends State<InventoryDetailsScreen> {
 
   bool _isNetworkLikePath(String? path) {
     if (path == null || path.isEmpty) return false;
-    return path.startsWith('http') || path.startsWith('data:');
+    return path.startsWith('http') || path.startsWith('data:') || path.startsWith('blob:');
   }
 
   Future<void> _editItem() async {
@@ -212,30 +214,15 @@ class _InventoryDetailsScreenState extends State<InventoryDetailsScreen> {
                               child: Image.network(
                                 thumbPath!,
                                 fit: BoxFit.cover,
-                                errorBuilder: (_, _, _) => const Center(
-                                  child: Icon(
-                                    Icons.fastfood,
-                                    size: 64,
-                                    color: Colors.grey,
-                                  ),
-                                ),
+                                errorBuilder: (_, _, _) => _placeholderDetails(),
                               ),
                             )
-                          : thumbPath != null && !kIsWeb && File(thumbPath).existsSync()
+                          : thumbPath != null && !kIsWeb
                           ? ClipRRect(
                               borderRadius: BorderRadius.circular(16),
-                              child: Image.file(
-                                File(thumbPath),
-                                fit: BoxFit.cover,
-                              ),
+                              child: _buildLocalImageDetails(thumbPath),
                             )
-                          : const Center(
-                              child: Icon(
-                                Icons.fastfood,
-                                size: 64,
-                                color: Colors.grey,
-                              ),
-                            ),
+                          : _placeholderDetails(),
                     ),
                   ),
                   const SizedBox(height: 24),
@@ -423,6 +410,54 @@ class _InventoryDetailsScreenState extends State<InventoryDetailsScreen> {
                 ],
               ),
             ),
+    );
+  }
+
+  Widget _placeholderDetails() => const Center(
+        child: Icon(
+          Icons.fastfood,
+          size: 64,
+          color: Colors.grey,
+        ),
+      );
+
+  Widget _buildLocalImageDetails(String path) {
+    final file = File(path);
+    if (file.existsSync()) {
+      return Image.file(
+        file,
+        fit: BoxFit.cover,
+        width: double.infinity,
+        height: 200,
+        errorBuilder: (_, _, _) => _placeholderDetails(),
+      );
+    }
+    
+    // Fallback: try to resolve path dynamically relative to current App Documents Directory
+    return FutureBuilder<Directory>(
+      future: getApplicationDocumentsDirectory(),
+      builder: (context, snapshot) {
+        if (snapshot.hasData) {
+          final appDir = snapshot.data!;
+          String? filename;
+          if (path.contains('food_images')) {
+            filename = path.substring(path.indexOf('food_images'));
+          } else {
+            filename = p.join('food_images', p.basename(path));
+          }
+          final resolvedFile = File(p.join(appDir.path, filename));
+          if (resolvedFile.existsSync()) {
+            return Image.file(
+              resolvedFile,
+              fit: BoxFit.cover,
+              width: double.infinity,
+              height: 200,
+              errorBuilder: (_, _, _) => _placeholderDetails(),
+            );
+          }
+        }
+        return _placeholderDetails();
+      },
     );
   }
 
