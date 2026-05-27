@@ -1,9 +1,16 @@
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
+import 'package:food_ni/authentication/login_screen.dart' show LoginScreen;
+import 'package:food_ni/home.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:path_provider/path_provider.dart';
+import 'package:path/path.dart' as p;
+
+import '../assistant/assistant_screen.dart';
+import '../inventory/inventory_screen.dart';
 
 class MyProfileScreen extends StatefulWidget {
   const MyProfileScreen({super.key});
@@ -23,7 +30,7 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
   
   // Temporary state for editing
   String? _tempAvatarUrl;
-  File? _tempImageFile;
+  XFile? _tempXFile;
   
   final ImagePicker _picker = ImagePicker();
 
@@ -52,7 +59,7 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
       _isEditing = true;
       _nameController.text = user?.displayName ?? '';
       _tempAvatarUrl = _currentAvatarUrl;
-      _tempImageFile = null;
+      _tempXFile = null;
     });
   }
 
@@ -60,7 +67,7 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
     final XFile? pickedFile = await _picker.pickImage(source: ImageSource.gallery);
     if (pickedFile != null) {
       setState(() {
-        _tempImageFile = File(pickedFile.path);
+        _tempXFile = pickedFile;
         _tempAvatarUrl = null;
       });
     }
@@ -71,15 +78,21 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
     try {
       String? finalPhotoUrl = _tempAvatarUrl;
 
-      // Upload Image to Firebase Storage if new one was picked
-      if (_tempImageFile != null && !kIsWeb) {
-        final storageRef = FirebaseStorage.instance
-            .ref()
-            .child('profile_photos')
-            .child('${user!.uid}.jpg');
-        
-        await storageRef.putFile(_tempImageFile!);
-        finalPhotoUrl = await storageRef.getDownloadURL();
+      // Save image locally if a new one was picked
+      if (_tempXFile != null) {
+        if (kIsWeb) {
+          // On web, use a data URL
+          final Uint8List bytes = await _tempXFile!.readAsBytes();
+          finalPhotoUrl = Uri.dataFromBytes(bytes, mimeType: 'image/jpeg').toString();
+        } else {
+          // On mobile, copy to app documents directory
+          final appDir = await getApplicationDocumentsDirectory();
+          final profileDir = Directory(p.join(appDir.path, 'profile_photos'));
+          if (!await profileDir.exists()) await profileDir.create(recursive: true);
+          final destPath = p.join(profileDir.path, '${user!.uid}.jpg');
+          await File(_tempXFile!.path).copy(destPath);
+          finalPhotoUrl = destPath;
+        }
       }
 
       // Update Firebase Auth Profile
@@ -96,7 +109,7 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
       if (mounted) {
         setState(() {
           _isEditing = false;
-          _tempImageFile = null;
+          _tempXFile = null;
         });
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Profile updated successfully!')),
@@ -125,10 +138,10 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
                 child: _isEditing ? _buildEditMode() : _buildViewMode(),
               ),
             ),
-            _buildBottomNav(),
           ],
         ),
       ),
+      bottomNavigationBar: _buildBottomNav(context),
     );
   }
 
@@ -178,7 +191,7 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
                       border: Border.all(color: Colors.white, width: 4),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.05),
+                          color: Colors.black.withValues(alpha: 0.05),
                           blurRadius: 10,
                           offset: const Offset(0, 4),
                         ),
@@ -367,7 +380,17 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
         TextButton(
           onPressed: () async {
             await FirebaseAuth.instance.signOut();
-            if (mounted) Navigator.of(context).pop();
+            if (context.mounted) {
+              // 3. Clear out all back-history stacks and push explicitly to your entry/login screen
+              Navigator.pushAndRemoveUntil(
+                context,
+                MaterialPageRoute(
+                  // Replace 'LoginScreen()' with your exact initial login or landing screen view name
+                  builder: (context) => const LoginScreen(), 
+                ),
+                (route) => false, // This wipes the widget tree stack, preventing any navbar context clash
+              );
+            };
           },
           child: const Text(
             'Sign Out',
@@ -437,7 +460,7 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
             final url = _fixedIcons[index];
             final isSelected = _currentAvatarUrl == url;
             return GestureDetector(
-              onTap: () => setState(() { _tempAvatarUrl = url; _tempImageFile = null; }),
+              onTap: () => setState(() { _tempAvatarUrl = url; _tempXFile = null; }),
               child: Container(
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
@@ -482,10 +505,26 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
 
   ImageProvider? _getProfileImage() {
     if (_isEditing) {
-      if (_tempImageFile != null) return FileImage(_tempImageFile!);
-      if (_tempAvatarUrl != null) return NetworkImage(_tempAvatarUrl!);
+      if (_tempXFile != null) {
+        if (kIsWeb) {
+          return NetworkImage(_tempXFile!.path);
+        } else {
+          return FileImage(File(_tempXFile!.path));
+        }
+      }
+      if (_tempAvatarUrl != null) {
+        if (_tempAvatarUrl!.startsWith('/') || _tempAvatarUrl!.startsWith('C:')) {
+          return FileImage(File(_tempAvatarUrl!));
+        }
+        return NetworkImage(_tempAvatarUrl!);
+      }
     } else {
-      if (_currentAvatarUrl != null) return NetworkImage(_currentAvatarUrl!);
+      if (_currentAvatarUrl != null) {
+        if (!kIsWeb && !_currentAvatarUrl!.startsWith('http') && !_currentAvatarUrl!.startsWith('data:')) {
+          return FileImage(File(_currentAvatarUrl!));
+        }
+        return NetworkImage(_currentAvatarUrl!);
+      }
     }
     return null;
   }
@@ -505,7 +544,7 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
           const SizedBox(height: 12),
           Text(value, style: TextStyle(color: textColor, fontSize: 20, fontWeight: FontWeight.bold)),
           const SizedBox(height: 4),
-          Text(label, style: TextStyle(color: textColor.withOpacity(0.7), fontSize: 11)),
+          Text(label, style: TextStyle(color: textColor.withValues(alpha: 0.7), fontSize: 11)),
         ],
       ),
     );
@@ -532,7 +571,7 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
               backgroundColor: Colors.white,
               child: CircleAvatar(
                 radius: 12,
-                backgroundImage: NetworkImage('https://i.pravatar.cc/150?img=${i + 10}'),
+                backgroundImage: NetworkImage('https://ui-avatars.com/api/?name=User+${i + 1}&background=random'),
               ),
             ),
           ),
@@ -598,29 +637,33 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
     );
   }
 
-  Widget _buildBottomNav() {
+  Widget _buildBottomNav(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+      padding: const EdgeInsets.symmetric(vertical: 15, horizontal: 10),
       decoration: const BoxDecoration(
         color: Colors.white,
         border: Border(top: BorderSide(color: Color(0xFFF0F0F0))),
       ),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
-          _buildNavItem(Icons.inventory_2_outlined, 'INVENTORY', false),
-          _buildNavItem(Icons.auto_awesome_outlined, 'ASSISTANT', false),
-          _buildScanButton(),
-          _buildNavItem(Icons.group_outlined, 'SOCIAL', false, onTap: () {
-            Navigator.of(context).pop(); // Go back to Home/Social
+          _buildNavItem(Icons.inventory_2_outlined, 'INVENTORY', false, onTap: () {
+            Navigator.push(context, MaterialPageRoute(builder: (context) => const InventoryScreen()));
           }),
-          _buildNavItem(Icons.person, 'PROFILE', true),
+          _buildNavItem(Icons.group_outlined, 'SOCIAL', false, onTap: () {
+            Navigator.push(context, MaterialPageRoute(builder: (context) => const HomeScreen()));
+          }),
+          _buildScanButton(context),
+          _buildNavItem(Icons.auto_awesome_outlined, 'ASSISTANT', false, onTap: () {
+            Navigator.push(context, MaterialPageRoute(builder: (context) => const AssistantScreen()));
+          }),
+          _buildNavItem(Icons.person_outline, 'PROFILE', true),
         ],
       ),
     );
   }
 
-  Widget _buildScanButton() {
+  Widget _buildScanButton(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: const BoxDecoration(color: Color(0xFF052A1E), shape: BoxShape.circle),

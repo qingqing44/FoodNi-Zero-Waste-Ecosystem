@@ -14,6 +14,22 @@
       },
       "oauth_client": [
         {
+          "client_id": "599901055825-l3ma7sl4197e46gmr3hfvhs3e7c2m1jc.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.food_ni",
+            "certificate_hash": "cef31eddce0fe6c0d6cf0ff75ef4098438a1c59e"
+          }
+        },
+        {
+          "client_id": "599901055825-s055u4inor20cks2hpvvsj0l3b6lvo9v.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.food_ni",
+            "certificate_hash": "134e67660ebc2615ee4e455145385371b5753b08"
+          }
+        },
+        {
           "client_id": "599901055825-u3im4t71dc6adlvguikbgufduf726bar.apps.googleusercontent.com",
           "client_type": 3
         }
@@ -29,6 +45,13 @@
             {
               "client_id": "599901055825-u3im4t71dc6adlvguikbgufduf726bar.apps.googleusercontent.com",
               "client_type": 3
+            },
+            {
+              "client_id": "599901055825-d2gqdrjku9ihgk2jto80na0f6n4sv0hl.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.foodNi"
+              }
             }
           ]
         }
