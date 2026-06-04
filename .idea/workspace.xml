@@ -5,27 +5,9 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="02138809-a317-41e5-b909-881efd79bfb5" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/food_ni/android/app/google-services.json" beforeDir="false" afterPath="$PROJECT_DIR$/food_ni/android/app/google-services.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/food_ni/lib/authentication/profile_screen.dart" beforeDir="false" afterPath="$PROJECT_DIR$/food_ni/lib/authentication/profile_screen.dart" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/food_ni/lib/authentication/register_screen.dart" beforeDir="false" afterPath="$PROJECT_DIR$/food_ni/lib/authentication/register_screen.dart" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/food_ni/lib/camera/details_screen.dart" beforeDir="false" afterPath="$PROJECT_DIR$/food_ni/lib/camera/details_screen.dart" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/food_ni/lib/home.dart" beforeDir="false" afterPath="$PROJECT_DIR$/food_ni/lib/home.dart" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/food_ni/lib/inventory/add_item_screen.dart" beforeDir="false" afterPath="$PROJECT_DIR$/food_ni/lib/inventory/add_item_screen.dart" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/food_ni/lib/inventory/edit_item_screen.dart" beforeDir="false" afterPath="$PROJECT_DIR$/food_ni/lib/inventory/edit_item_screen.dart" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/food_ni/lib/inventory/inventory_details_screen.dart" beforeDir="false" afterPath="$PROJECT_DIR$/food_ni/lib/inventory/inventory_details_screen.dart" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/food_ni/lib/inventory/inventory_screen.dart" beforeDir="false" afterPath="$PROJECT_DIR$/food_ni/lib/inventory/inventory_screen.dart" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/food_ni/linux/flutter/generated_plugins.cmake" beforeDir="false" afterPath="$PROJECT_DIR$/food_ni/linux/flutter/generated_plugins.cmake" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/food_ni/macos/Flutter/GeneratedPluginRegistrant.swift" beforeDir="false" afterPath="$PROJECT_DIR$/food_ni/macos/Flutter/GeneratedPluginRegistrant.swift" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/food_ni/pubspec.lock" beforeDir="false" afterPath="$PROJECT_DIR$/food_ni/pubspec.lock" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/food_ni/windows/flutter/generated_plugin_registrant.cc" beforeDir="false" afterPath="$PROJECT_DIR$/food_ni/windows/flutter/generated_plugin_registrant.cc" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/food_ni/windows/flutter/generated_plugins.cmake" beforeDir="false" afterPath="$PROJECT_DIR$/food_ni/windows/flutter/generated_plugins.cmake" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/foodni_admin/lib/core/services/auth_service.dart" beforeDir="false" afterPath="$PROJECT_DIR$/foodni_admin/lib/core/services/auth_service.dart" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/foodni_admin/lib/features/auth/login_page.dart" beforeDir="false" afterPath="$PROJECT_DIR$/foodni_admin/lib/features/auth/login_page.dart" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/foodni_admin/lib/features/dashboard/dashboard_page.dart" beforeDir="false" afterPath="$PROJECT_DIR$/foodni_admin/lib/features/dashboard/dashboard_page.dart" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/foodni_admin/lib/features/settings/profile_page.dart" beforeDir="false" afterPath="$PROJECT_DIR$/foodni_admin/lib/features/settings/profile_page.dart" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/foodni_admin/lib/features/users/user_management_page.dart" beforeDir="false" afterPath="$PROJECT_DIR$/foodni_admin/lib/features/users/user_management_page.dart" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/foodni_admin/pubspec.lock" beforeDir="false" afterPath="$PROJECT_DIR$/foodni_admin/pubspec.lock" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/caches/deviceStreaming.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/caches/deviceStreaming.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/misc.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -56,7 +38,7 @@
     &quot;cf.first.check.clang-format&quot;: &quot;false&quot;,
     &quot;cidr.known.project.marker&quot;: &quot;true&quot;,
     &quot;dart.analysis.tool.window.visible&quot;: &quot;false&quot;,
-    &quot;git-widget-placeholder&quot;: &quot;wl&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;main&quot;,
     &quot;kotlin-language-version-configured&quot;: &quot;true&quot;,
     &quot;last_opened_file_path&quot;: &quot;C:/Users/user/OneDrive/Desktop/MAP&quot;,
     &quot;settings.editor.selected.configurable&quot;: &quot;preferences.pluginManager&quot;,

@@ -9,6 +9,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 
 import 'add_item_screen.dart';
+import 'calendar_screen.dart';
 import 'inventory_details_screen.dart';
 
 /// Displays the current user's scanned food inventory from Firestore.
@@ -231,6 +232,20 @@ class _InventoryScreenState extends State<InventoryScreen> {
             fontWeight: FontWeight.bold,
           ),
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.calendar_month_outlined),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const InventoryCalendarScreen(),
+                ),
+              );
+            },
+            tooltip: 'View Calendar',
+          ),
+        ],
       ),
       body: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance
