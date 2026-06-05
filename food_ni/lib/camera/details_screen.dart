@@ -4,8 +4,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 
+import '../inventory/food_status_utils.dart';
+import '../notifications/expiry_notification_service.dart';
 import '../storage/storage_guide_screen.dart';
 
 /// Displays the Gemini analysis result for a scanned food item and lets the
@@ -27,15 +28,11 @@ class _FoodDetailsScreenState extends State<FoodDetailsScreen> {
   // ---------------------------------------------------------------------------
 
   Color _statusColor(String status) {
-    final s = status.toLowerCase();
-    if (s == 'fresh') return const Color(0xFF34A853);       // green
-    if (s == 'good') return const Color(0xFF1A73E8);        // blue
-    if (s.contains('consume')) return Colors.orange;        // orange
-    if (s == 'spoiled') return Colors.red;                  // red
-    return Colors.grey;
+    return FoodStatusUtils.statusColor(status);
   }
 
-  Color _statusBg(String status) => _statusColor(status).withValues(alpha: 0.12);
+  Color _statusBg(String status) =>
+      _statusColor(status).withValues(alpha: 0.12);
 
   // ---------------------------------------------------------------------------
   // Firestore save
@@ -50,82 +47,84 @@ class _FoodDetailsScreenState extends State<FoodDetailsScreen> {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) throw Exception('User not logged in');
 
-      DateTime expiryDateTime;
       final rawAiDate = widget.foodData['expiryDate'];
-      
-      // Grab the actual shelf life value detected by your AI model
-      final int aiDaysRemaining = (widget.foodData['estimatedDaysRemaining'] as num?)?.toInt() ?? 7;
 
-      if (rawAiDate is DateTime) {
-        expiryDateTime = rawAiDate;
-      } else if (rawAiDate is String) {
-        try {
-          expiryDateTime = DateFormat('MMM dd, yyyy').parse(rawAiDate);
-        } catch (_) {
-          try {
-            expiryDateTime = DateTime.parse(rawAiDate);
-          } catch (_) {
-            expiryDateTime = DateTime.now().add(Duration(days: aiDaysRemaining));
-          }
-        }
-      } else {
-        // Use the AI's detected remaining days instead of defaulting to a static 7 days
-        expiryDateTime = DateTime.now().add(Duration(days: aiDaysRemaining));
-      }
+      // Grab the actual shelf life value detected by your AI model
+      final int aiDaysRemaining =
+          (widget.foodData['estimatedDaysRemaining'] as num?)?.toInt() ?? 7;
+      final expiryDateTime = _expiryDateFrom(rawAiDate, aiDaysRemaining);
 
       // Format strings matching your manual entry screen setup
-      final String formattedExpiryString = DateFormat('MMM dd, yyyy').format(expiryDateTime);
-      
-      // Zero out structural hourly variances to ensure daily countdown integrity
-      final today = DateTime.now();
-      final todayCleaned = DateTime(today.year, today.month, today.day);
-      final expiryCleaned = DateTime(expiryDateTime.year, expiryDateTime.month, expiryDateTime.day);
-      final int dynamicDaysRemaining = expiryCleaned.difference(todayCleaned).inDays;
-
-      String calculatedStatus = 'Fresh';
-      if (dynamicDaysRemaining <= 0) {
-        calculatedStatus = 'Spoiled';
-      } else if (dynamicDaysRemaining <= 3) {
-        calculatedStatus = 'Good'; 
-      }
+      final formattedExpiryString = FoodStatusUtils.formatExpiryDate(
+        expiryDateTime,
+      );
+      final dynamicDaysRemaining = FoodStatusUtils.daysRemaining(
+        expiryDateTime,
+      );
+      final calculatedStatus = FoodStatusUtils.statusForDays(
+        dynamicDaysRemaining,
+      );
+      final foodName =
+          widget.foodData['foodName'] ??
+          widget.foodData['name'] ??
+          'Scanned Item';
 
       // Commit precisely aligned key maps to Firestore
-      await FirebaseFirestore.instance.collection('foodItems').add({
+      final docRef = FirebaseFirestore.instance.collection('foodItems').doc();
+      await docRef.set({
         'userId': user.uid,
-        'foodName': widget.foodData['foodName'] ?? widget.foodData['name'] ?? 'Scanned Item',
+        'foodName': foodName,
         'description':
-            widget.foodData['description'] ??
-            'No food description available.',
+            widget.foodData['description'] ?? 'No food description available.',
         'category': widget.foodData['category'] ?? 'Uncategorized',
         'quantity': widget.foodData['quantity'] ?? '1 pcs',
-        'storageSuggestion': widget.foodData['storageSuggestion'] ?? widget.foodData['storage'] ?? 'No special storage suggestions provided.',
-        'thumbnailPath': widget.foodData['thumbnailPath'] ?? widget.foodData['localImagePath'],
+        'storageSuggestion':
+            widget.foodData['storageSuggestion'] ??
+            widget.foodData['storage'] ??
+            'No special storage suggestions provided.',
+        'thumbnailPath':
+            widget.foodData['thumbnailPath'] ??
+            widget.foodData['localImagePath'],
         'localImagePath': widget.foodData['localImagePath'],
         'caloriesPer100g':
             widget.foodData['caloriesPer100g'] ?? 'Not available',
-        'basicRecipes': _basicRecipesFrom(widget.foodData['basicRecipes'])
-            .map((recipe) => recipe.toMap())
-            .toList(),
-        
-        'expiryDate': formattedExpiryString, 
-        'estimatedDaysRemaining': dynamicDaysRemaining, 
-        'freshnessStatus': widget.foodData['freshnessStatus'] ?? calculatedStatus,
-        'freshnessScore': widget.foodData['freshnessScore'] ?? (dynamicDaysRemaining > 0 ? 100 : 0),
-        
+        'basicRecipes': _basicRecipesFrom(
+          widget.foodData['basicRecipes'],
+        ).map((recipe) => recipe.toMap()).toList(),
+
+        'expiryDate': formattedExpiryString,
+        'estimatedDaysRemaining': dynamicDaysRemaining,
+        'freshnessStatus': calculatedStatus,
+        'freshnessScore': FoodStatusUtils.freshnessScoreForStatus(
+          calculatedStatus,
+        ),
         'scanDate': FieldValue.serverTimestamp(),
-        'source': 'ai_scan'
+        'source': 'ai_scan',
       });
 
+      if (dynamicDaysRemaining >= 0) {
+        await ExpiryNotificationService.instance.scheduleExpiryReminder(
+          itemId: docRef.id,
+          foodName: foodName.toString(),
+          expiryDate: expiryDateTime,
+        );
+      }
+
       if (mounted) {
-        Navigator.pop(context); 
+        Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Scanned food item saved to inventory!')),
+          const SnackBar(
+            content: Text('Scanned food item saved to inventory!'),
+          ),
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to save item: $e'), backgroundColor: Colors.redAccent),
+          SnackBar(
+            content: Text('Failed to save item: $e'),
+            backgroundColor: Colors.redAccent,
+          ),
         );
       }
     } finally {
@@ -135,6 +134,24 @@ class _FoodDetailsScreenState extends State<FoodDetailsScreen> {
         });
       }
     }
+  }
+
+  DateTime _expiryDateFrom(dynamic rawDate, int fallbackDays) {
+    if (rawDate is DateTime) {
+      return rawDate;
+    }
+    if (rawDate is String) {
+      final parsedFormatted = FoodStatusUtils.parseExpiryDate(rawDate);
+      if (parsedFormatted != null) return parsedFormatted;
+
+      try {
+        return DateTime.parse(rawDate);
+      } catch (_) {}
+    }
+
+    return FoodStatusUtils.malaysiaTodayDateOnly().add(
+      Duration(days: fallbackDays),
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -149,16 +166,26 @@ class _FoodDetailsScreenState extends State<FoodDetailsScreen> {
     final description =
         data['description'] as String? ?? 'No food description available.';
     final category = data['category'] as String? ?? 'Other';
-    final freshnessScore = (data['freshnessScore'] as num?)?.toInt() ?? 0;
-    final freshnessStatus = data['freshnessStatus'] as String? ?? 'Unknown';
-    final estimatedDaysRemaining =
+    final rawEstimatedDays =
         (data['estimatedDaysRemaining'] as num?)?.toInt() ?? 0;
+    final expiryDateTime = _expiryDateFrom(
+      data['expiryDate'],
+      rawEstimatedDays,
+    );
+    final estimatedDaysRemaining = FoodStatusUtils.daysRemaining(
+      expiryDateTime,
+    );
+    final freshnessStatus = FoodStatusUtils.statusForDays(
+      estimatedDaysRemaining,
+    );
+    final freshnessScore = FoodStatusUtils.freshnessScoreForStatus(
+      freshnessStatus,
+    );
     final caloriesPer100g =
         data['caloriesPer100g'] as String? ?? 'Not available';
     final basicRecipes = _basicRecipesFrom(data['basicRecipes']);
     final confidence = (data['confidence'] as num?)?.toInt() ?? 0;
-    final reasoning =
-        data['reasoning'] as String? ?? 'No reasoning provided.';
+    final reasoning = data['reasoning'] as String? ?? 'No reasoning provided.';
     final localImagePath = data['localImagePath'] as String?;
 
     final statusColor = _statusColor(freshnessStatus);
@@ -202,7 +229,11 @@ class _FoodDetailsScreenState extends State<FoodDetailsScreen> {
 
             // ── Freshness badge ──────────────────────────────────────────────
             _buildFreshnessBadge(
-              freshnessStatus, freshnessScore, statusColor, statusBg),
+              freshnessStatus,
+              freshnessScore,
+              statusColor,
+              statusBg,
+            ),
             const SizedBox(height: 16),
             _buildInfoCard(
               icon: Icons.description_outlined,
@@ -217,7 +248,8 @@ class _FoodDetailsScreenState extends State<FoodDetailsScreen> {
             _buildInfoCard(
               icon: Icons.access_time_rounded,
               title: 'Estimated Shelf Life',
-              content: '$estimatedDaysRemaining day${estimatedDaysRemaining == 1 ? '' : 's'} remaining',
+              content:
+                  '$estimatedDaysRemaining day${estimatedDaysRemaining == 1 ? '' : 's'} remaining',
               bgColor: const Color(0xFFE8F3EF),
               iconColor: const Color(0xFF34A853),
             ),
@@ -248,8 +280,8 @@ class _FoodDetailsScreenState extends State<FoodDetailsScreen> {
             const SizedBox(height: 12),
             _buildRecipesCard(basicRecipes),
             const SizedBox(height: 12),
-            if (freshnessStatus.toLowerCase() == 'spoiled')
-              _buildSpoiledWarningCard()
+            if (freshnessStatus == FoodStatusUtils.expired)
+              _buildExpiredWarningCard()
             else
               _buildStorageGuideCard(foodName, category),
           ],
@@ -275,7 +307,9 @@ class _FoodDetailsScreenState extends State<FoodDetailsScreen> {
         height: 250,
         errorBuilder: (_, _, _) => _placeholderImage(),
       );
-    } else if (localImagePath != null && !kIsWeb && File(localImagePath).existsSync()) {
+    } else if (localImagePath != null &&
+        !kIsWeb &&
+        File(localImagePath).existsSync()) {
       imageWidget = Image.file(
         File(localImagePath),
         fit: BoxFit.cover,
@@ -299,32 +333,31 @@ class _FoodDetailsScreenState extends State<FoodDetailsScreen> {
   }
 
   Widget _placeholderImage() => Container(
-        height: 250,
-        color: Colors.grey[200],
-        child: const Icon(Icons.fastfood, size: 64, color: Colors.grey),
-      );
+    height: 250,
+    color: Colors.grey[200],
+    child: const Icon(Icons.fastfood, size: 64, color: Colors.grey),
+  );
 
   Widget _buildCategoryChip(String category) => Align(
-        alignment: Alignment.centerLeft,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-          decoration: BoxDecoration(
-            color: const Color(0xFFE8F3EF),
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: Text(
-            category,
-            style: const TextStyle(
-              color: Color(0xFF34A853),
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
+    alignment: Alignment.centerLeft,
+    child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      decoration: BoxDecoration(
+        color: const Color(0xFFE8F3EF),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        category,
+        style: const TextStyle(
+          color: Color(0xFF34A853),
+          fontSize: 13,
+          fontWeight: FontWeight.w600,
         ),
-      );
+      ),
+    ),
+  );
 
-  Widget _buildFreshnessBadge(
-    String status, int score, Color color, Color bg) {
+  Widget _buildFreshnessBadge(String status, int score, Color color, Color bg) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: BoxDecoration(
@@ -349,7 +382,10 @@ class _FoodDetailsScreenState extends State<FoodDetailsScreen> {
               ),
               Text(
                 'Freshness score: $score / 100',
-                style: TextStyle(fontSize: 13, color: color.withValues(alpha: 0.8)),
+                style: TextStyle(
+                  fontSize: 13,
+                  color: color.withValues(alpha: 0.8),
+                ),
               ),
             ],
           ),
@@ -419,7 +455,7 @@ class _FoodDetailsScreenState extends State<FoodDetailsScreen> {
     );
   }
 
-  Widget _buildSpoiledWarningCard() {
+  Widget _buildExpiredWarningCard() {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -447,7 +483,7 @@ class _FoodDetailsScreenState extends State<FoodDetailsScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Food is Spoiled',
+                  'Food is Expired',
                   style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.bold,
@@ -456,7 +492,7 @@ class _FoodDetailsScreenState extends State<FoodDetailsScreen> {
                 ),
                 SizedBox(height: 2),
                 Text(
-                  'This food should not be stored or consumed. Please discard it.',
+                  'This item has passed its expiry date. Please check carefully before consuming or discard it if unsafe.',
                   style: TextStyle(fontSize: 13, color: Colors.red),
                 ),
               ],
@@ -473,10 +509,8 @@ class _FoodDetailsScreenState extends State<FoodDetailsScreen> {
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (_) => StorageGuideScreen(
-              foodName: foodName,
-              category: category,
-            ),
+            builder: (_) =>
+                StorageGuideScreen(foodName: foodName, category: category),
           ),
         );
       },
@@ -485,7 +519,9 @@ class _FoodDetailsScreenState extends State<FoodDetailsScreen> {
         decoration: BoxDecoration(
           color: const Color(0xFFE8F3EF),
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: const Color(0xFF34A853).withValues(alpha: 0.3)),
+          border: Border.all(
+            color: const Color(0xFF34A853).withValues(alpha: 0.3),
+          ),
         ),
         child: Row(
           children: [
@@ -524,18 +560,12 @@ class _FoodDetailsScreenState extends State<FoodDetailsScreen> {
                   SizedBox(height: 2),
                   Text(
                     'Ideal temperatures & storage techniques',
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: Colors.grey,
-                    ),
+                    style: TextStyle(fontSize: 13, color: Colors.grey),
                   ),
                 ],
               ),
             ),
-            const Icon(
-              Icons.chevron_right_rounded,
-              color: Color(0xFF34A853),
-            ),
+            const Icon(Icons.chevron_right_rounded, color: Color(0xFF34A853)),
           ],
         ),
       ),
@@ -589,7 +619,9 @@ class _FoodDetailsScreenState extends State<FoodDetailsScreen> {
                       height: 20,
                       width: 20,
                       child: CircularProgressIndicator(
-                          color: Colors.white, strokeWidth: 2),
+                        color: Colors.white,
+                        strokeWidth: 2,
+                      ),
                     )
                   : const Text(
                       'Save to Inventory',
@@ -635,10 +667,10 @@ class _FoodDetailsScreenState extends State<FoodDetailsScreen> {
       final rawSteps = rawRecipe['steps'];
       final steps = rawSteps is List
           ? rawSteps
-              .map((step) => step?.toString().trim() ?? '')
-              .where((step) => step.isNotEmpty)
-              .take(3)
-              .toList()
+                .map((step) => step?.toString().trim() ?? '')
+                .where((step) => step.isNotEmpty)
+                .take(3)
+                .toList()
           : <String>[];
 
       if (title.isEmpty && steps.isEmpty) return null;
@@ -650,10 +682,7 @@ class _FoodDetailsScreenState extends State<FoodDetailsScreen> {
 
     final recipeText = rawRecipe?.toString().trim() ?? '';
     if (recipeText.isEmpty) return null;
-    return _RecipeCardData(
-      title: 'Recipe Idea',
-      steps: [recipeText],
-    );
+    return _RecipeCardData(title: 'Recipe Idea', steps: [recipeText]);
   }
 
   List<_RecipeCardData> _ensureTwoRecipes(List<_RecipeCardData> recipes) {
@@ -676,11 +705,7 @@ class _FoodDetailsScreenState extends State<FoodDetailsScreen> {
         children: [
           const Row(
             children: [
-              Icon(
-                Icons.menu_book_rounded,
-                color: Color(0xFFB26A00),
-                size: 22,
-              ),
+              Icon(Icons.menu_book_rounded, color: Color(0xFFB26A00), size: 22),
               SizedBox(width: 10),
               Text(
                 'Basic Recipes',
@@ -763,16 +788,10 @@ class _FoodDetailsScreenState extends State<FoodDetailsScreen> {
 }
 
 class _RecipeCardData {
-  const _RecipeCardData({
-    required this.title,
-    required this.steps,
-  });
+  const _RecipeCardData({required this.title, required this.steps});
 
   final String title;
   final List<String> steps;
 
-  Map<String, dynamic> toMap() => {
-    'title': title,
-    'steps': steps,
-  };
+  Map<String, dynamic> toMap() => {'title': title, 'steps': steps};
 }

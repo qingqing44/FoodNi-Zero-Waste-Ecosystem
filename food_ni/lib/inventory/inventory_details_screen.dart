@@ -2,11 +2,12 @@ import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 
+import '../notifications/expiry_notification_service.dart';
 import 'edit_item_screen.dart';
+import 'food_status_utils.dart';
 import '../storage/storage_guide_screen.dart';
 
 class InventoryDetailsScreen extends StatefulWidget {
@@ -21,18 +22,11 @@ class InventoryDetailsScreen extends StatefulWidget {
 class _InventoryDetailsScreenState extends State<InventoryDetailsScreen> {
   bool _isDeleting = false;
 
-  Color _statusColor(String? status) {
-    final s = (status ?? '').toLowerCase();
-    if (s == 'fresh') return const Color(0xFF34A853);
-    if (s == 'good') return const Color(0xFF1A73E8);
-    if (s.contains('consume')) return Colors.orange;
-    if (s == 'spoiled') return Colors.red;
-    return Colors.grey;
-  }
-
   bool _isNetworkLikePath(String? path) {
     if (path == null || path.isEmpty) return false;
-    return path.startsWith('http') || path.startsWith('data:') || path.startsWith('blob:');
+    return path.startsWith('http') ||
+        path.startsWith('data:') ||
+        path.startsWith('blob:');
   }
 
   Future<void> _editItem() async {
@@ -91,6 +85,8 @@ class _InventoryDetailsScreenState extends State<InventoryDetailsScreen> {
     });
 
     try {
+      await ExpiryNotificationService.instance.cancelReminder(widget.item.id);
+
       // Use the unique Firestore document ID to delete the exact record
       await FirebaseFirestore.instance
           .collection('foodItems')
@@ -133,35 +129,12 @@ class _InventoryDetailsScreenState extends State<InventoryDetailsScreen> {
         (data['thumbnailPath'] as String?) ??
         (data['localImagePath'] as String?);
     int daysRemaining = (data['estimatedDaysRemaining'] as num?)?.toInt() ?? 0;
-    String freshnessStatus = data['freshnessStatus'] ?? 'Unknown';
-
-    if (expiryDate != 'N/A') {
-      try {
-        // Parse the 'MMM dd, yyyy' string template back into an active DateTime timeline object
-        DateTime expiryParsed = DateFormat('MMM dd, yyyy').parse(expiryDate);
-        DateTime today = DateTime.now();
-
-        DateTime cleanToday = DateTime(today.year, today.month, today.day);
-        DateTime cleanExpiry = DateTime(
-          expiryParsed.year,
-          expiryParsed.month,
-          expiryParsed.day,
-        );
-
-        // Calculate real day difference cleanly
-        daysRemaining = cleanExpiry.difference(cleanToday).inDays;
-
-        if (daysRemaining <= 0) {
-          freshnessStatus = 'Spoiled';
-        } else if (daysRemaining <= 3) {
-          freshnessStatus = 'Good';
-        } else {
-          freshnessStatus = 'Fresh';
-        }
-      } catch (e) {
-        daysRemaining = (data['estimatedDaysRemaining'] as num?)?.toInt() ?? 0;
-      }
+    final parsedDays = FoodStatusUtils.daysRemainingFromString(expiryDate);
+    if (parsedDays != null) {
+      daysRemaining = parsedDays;
     }
+    final freshnessStatus = FoodStatusUtils.statusForDays(daysRemaining);
+    final statusColor = FoodStatusUtils.statusColor(freshnessStatus);
 
     return Scaffold(
       backgroundColor: const Color(0xFFF9F8F4),
@@ -214,7 +187,8 @@ class _InventoryDetailsScreenState extends State<InventoryDetailsScreen> {
                               child: Image.network(
                                 thumbPath!,
                                 fit: BoxFit.cover,
-                                errorBuilder: (_, _, _) => _placeholderDetails(),
+                                errorBuilder: (_, _, _) =>
+                                    _placeholderDetails(),
                               ),
                             )
                           : thumbPath != null && !kIsWeb
@@ -253,15 +227,13 @@ class _InventoryDetailsScreenState extends State<InventoryDetailsScreen> {
                               vertical: 6,
                             ),
                             decoration: BoxDecoration(
-                              color: _statusColor(
-                                freshnessStatus,
-                              ).withValues(alpha: 0.15),
+                              color: statusColor.withValues(alpha: 0.15),
                               borderRadius: BorderRadius.circular(8),
                             ),
                             child: Text(
                               freshnessStatus.toUpperCase(),
                               style: TextStyle(
-                                color: _statusColor(freshnessStatus),
+                                color: statusColor,
                                 fontWeight: FontWeight.bold,
                                 fontSize: 12,
                               ),
@@ -298,19 +270,18 @@ class _InventoryDetailsScreenState extends State<InventoryDetailsScreen> {
                           daysRemaining >= 0
                               ? '$daysRemaining days left'
                               : 'Expired',
-                          valueColor: daysRemaining <= 3
-                              ? Colors.red
-                              : const Color(0xFF34A853),
+                          valueColor: statusColor,
                         ),
                       ],
                     ),
                   ),
                   const SizedBox(height: 20),
 
-                  const SizedBox(height: 4),
+                  _buildReminderCard(freshnessStatus),
+                  const SizedBox(height: 20),
 
-                  // ── Storage Guide or Spoiled Warning ──────────────────────
-                  if (freshnessStatus.toLowerCase() == 'spoiled')
+                  // ── Storage Guide or Expired Warning ──────────────────────
+                  if (freshnessStatus == FoodStatusUtils.expired)
                     Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
@@ -320,15 +291,18 @@ class _InventoryDetailsScreenState extends State<InventoryDetailsScreen> {
                       ),
                       child: Row(
                         children: [
-                          Icon(Icons.warning_amber_rounded,
-                              color: Colors.red.shade400, size: 28),
+                          Icon(
+                            Icons.warning_amber_rounded,
+                            color: Colors.red.shade400,
+                            size: 28,
+                          ),
                           const SizedBox(width: 12),
                           const Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  'Food is Spoiled',
+                                  'Food is Expired',
                                   style: TextStyle(
                                     fontWeight: FontWeight.bold,
                                     color: Colors.red,
@@ -337,7 +311,7 @@ class _InventoryDetailsScreenState extends State<InventoryDetailsScreen> {
                                 ),
                                 SizedBox(height: 4),
                                 Text(
-                                  'This item should not be stored or consumed. Please discard it.',
+                                  'This item has passed its expiry date. Please check carefully before consuming or discard it if unsafe.',
                                   style: TextStyle(
                                     color: Colors.red,
                                     fontSize: 13,
@@ -413,13 +387,43 @@ class _InventoryDetailsScreenState extends State<InventoryDetailsScreen> {
     );
   }
 
-  Widget _placeholderDetails() => const Center(
-        child: Icon(
-          Icons.fastfood,
-          size: 64,
-          color: Colors.grey,
-        ),
-      );
+  Widget _placeholderDetails() =>
+      const Center(child: Icon(Icons.fastfood, size: 64, color: Colors.grey));
+
+  Widget _buildReminderCard(String freshnessStatus) {
+    final isExpired = freshnessStatus == FoodStatusUtils.expired;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFF0F0F0)),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.notifications_active_outlined,
+            color: Color(0xFF34A853),
+            size: 20,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              isExpired
+                  ? 'Reminder: Not scheduled for expired items'
+                  : 'Reminder: 1 day before expiry',
+              style: const TextStyle(
+                color: Color(0xFF052A1E),
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _buildLocalImageDetails(String path) {
     final file = File(path);
@@ -432,7 +436,7 @@ class _InventoryDetailsScreenState extends State<InventoryDetailsScreen> {
         errorBuilder: (_, _, _) => _placeholderDetails(),
       );
     }
-    
+
     // Fallback: try to resolve path dynamically relative to current App Documents Directory
     return FutureBuilder<Directory>(
       future: getApplicationDocumentsDirectory(),

@@ -10,6 +10,8 @@ import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 
 import '../camera/local_image_service.dart';
+import '../notifications/expiry_notification_service.dart';
+import 'food_status_utils.dart';
 
 class EditItemScreen extends StatefulWidget {
   final QueryDocumentSnapshot item;
@@ -65,7 +67,9 @@ class _EditItemScreenState extends State<EditItemScreen> {
     _selectedCategory = data['category'] as String? ?? 'Uncategorized';
     _localImagePath = data['localImagePath'] as String?;
     _thumbnailPath = data['thumbnailPath'] as String?;
-    _selectedDate = _parseExpiryDate(data['expiryDate'] as String?);
+    _selectedDate = FoodStatusUtils.parseExpiryDate(
+      data['expiryDate'] as String?,
+    );
     _populateQuantity(data['quantity'] as String?);
   }
 
@@ -74,15 +78,6 @@ class _EditItemScreenState extends State<EditItemScreen> {
     _nameController.dispose();
     _quantityController.dispose();
     super.dispose();
-  }
-
-  DateTime? _parseExpiryDate(String? value) {
-    if (value == null || value.isEmpty || value == 'N/A') return null;
-    try {
-      return DateFormat('MMM dd, yyyy').parse(value);
-    } catch (_) {
-      return null;
-    }
   }
 
   void _populateQuantity(String? value) {
@@ -155,11 +150,11 @@ class _EditItemScreenState extends State<EditItemScreen> {
   }
 
   Future<void> _selectDate(BuildContext context) async {
-    final today = DateTime.now();
+    final today = FoodStatusUtils.malaysiaTodayDateOnly();
     final DateTime? picked = await showDatePicker(
       context: context,
       initialDate: _selectedDate ?? today,
-      firstDate: DateTime(2000),
+      firstDate: DateTime(today.year - 1, today.month, today.day),
       lastDate: DateTime(2101),
       builder: (context, child) {
         return Theme(
@@ -186,29 +181,6 @@ class _EditItemScreenState extends State<EditItemScreen> {
     }
   }
 
-  int _daysRemaining(DateTime expiryDate) {
-    final today = DateTime.now();
-    final cleanToday = DateTime(today.year, today.month, today.day);
-    final cleanExpiry = DateTime(
-      expiryDate.year,
-      expiryDate.month,
-      expiryDate.day,
-    );
-    return cleanExpiry.difference(cleanToday).inDays;
-  }
-
-  String _freshnessStatusFor(int daysRemaining) {
-    if (daysRemaining <= 0) return 'Spoiled';
-    if (daysRemaining <= 3) return 'Good';
-    return 'Fresh';
-  }
-
-  int _freshnessScoreFor(int daysRemaining) {
-    if (daysRemaining <= 0) return 0;
-    if (daysRemaining <= 3) return 75;
-    return 100;
-  }
-
   Future<void> _deleteOldImageIfSafe(String? oldPath, String? newPath) async {
     if (oldPath == null || oldPath.isEmpty || oldPath == newPath) return;
     if (kIsWeb || _isNetworkLikePath(oldPath)) return;
@@ -225,7 +197,9 @@ class _EditItemScreenState extends State<EditItemScreen> {
 
   bool _isNetworkLikePath(String? path) {
     if (path == null || path.isEmpty) return false;
-    return path.startsWith('http') || path.startsWith('data:') || path.startsWith('blob:');
+    return path.startsWith('http') ||
+        path.startsWith('data:') ||
+        path.startsWith('blob:');
   }
 
   Future<void> _saveItem() async {
@@ -263,8 +237,9 @@ class _EditItemScreenState extends State<EditItemScreen> {
         }
       }
 
-      final formattedDate = DateFormat('MMM dd, yyyy').format(_selectedDate!);
-      final daysRemaining = _daysRemaining(_selectedDate!);
+      final formattedDate = FoodStatusUtils.formatExpiryDate(_selectedDate!);
+      final daysRemaining = FoodStatusUtils.daysRemaining(_selectedDate!);
+      final freshnessStatus = FoodStatusUtils.statusForDays(daysRemaining);
       final selectedUnit = _selectedUnit == 'Unit' ? 'pcs' : _selectedUnit;
       final quantityDisplay =
           '${_quantityController.text.trim()} $selectedUnit';
@@ -275,12 +250,23 @@ class _EditItemScreenState extends State<EditItemScreen> {
         'quantity': quantityDisplay,
         'expiryDate': formattedDate,
         'estimatedDaysRemaining': daysRemaining,
-        'freshnessStatus': _freshnessStatusFor(daysRemaining),
-        'freshnessScore': _freshnessScoreFor(daysRemaining),
+        'freshnessStatus': freshnessStatus,
+        'freshnessScore': FoodStatusUtils.freshnessScoreForStatus(
+          freshnessStatus,
+        ),
         'localImagePath': nextLocalImagePath,
         'thumbnailPath': nextThumbnailPath,
         'updatedAt': FieldValue.serverTimestamp(),
       });
+
+      await ExpiryNotificationService.instance.cancelReminder(widget.item.id);
+      if (daysRemaining >= 0) {
+        await ExpiryNotificationService.instance.scheduleExpiryReminder(
+          itemId: widget.item.id,
+          foodName: _nameController.text.trim(),
+          expiryDate: _selectedDate!,
+        );
+      }
 
       if (_selectedImage != null) {
         await _deleteOldImageIfSafe(oldLocalImagePath, nextLocalImagePath);
@@ -505,7 +491,9 @@ class _EditItemScreenState extends State<EditItemScreen> {
             final appDir = snapshot.data!;
             String? filename;
             if (existingPath.contains('food_images')) {
-              filename = existingPath.substring(existingPath.indexOf('food_images'));
+              filename = existingPath.substring(
+                existingPath.indexOf('food_images'),
+              );
             } else {
               filename = p.join('food_images', p.basename(existingPath));
             }

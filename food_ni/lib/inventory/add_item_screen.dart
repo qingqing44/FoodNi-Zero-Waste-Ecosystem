@@ -9,6 +9,9 @@ import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 
+import '../notifications/expiry_notification_service.dart';
+import 'food_status_utils.dart';
+
 class AddItemScreen extends StatefulWidget {
   const AddItemScreen({super.key});
 
@@ -20,7 +23,7 @@ class _AddItemScreenState extends State<AddItemScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _quantityController = TextEditingController(text: '1');
-  
+
   String? _selectedCategory;
   String _selectedUnit = 'Unit';
   DateTime? _selectedDate;
@@ -28,8 +31,26 @@ class _AddItemScreenState extends State<AddItemScreen> {
   XFile? _selectedImage;
   final ImagePicker _picker = ImagePicker();
 
-  final List<String> _categories = ['Produce', 'Main Course', 'Prepared Meal', 'Meat & Seafood', 'Dessert/Pastry', 'Frozen', 'Packaged Beverages', 'Fruit'];
-  final List<String> _units = ['Unit', 'kg', 'g', 'lbs', 'L', 'ml', 'oz', 'Pack'];
+  final List<String> _categories = [
+    'Produce',
+    'Main Course',
+    'Prepared Meal',
+    'Meat & Seafood',
+    'Dessert/Pastry',
+    'Frozen',
+    'Packaged Beverages',
+    'Fruit',
+  ];
+  final List<String> _units = [
+    'Unit',
+    'kg',
+    'g',
+    'lbs',
+    'L',
+    'ml',
+    'oz',
+    'Pack',
+  ];
 
   @override
   void dispose() {
@@ -40,7 +61,10 @@ class _AddItemScreenState extends State<AddItemScreen> {
 
   Future<void> _pickImage(ImageSource source) async {
     try {
-      final pickedFile = await _picker.pickImage(source: source, imageQuality: 80);
+      final pickedFile = await _picker.pickImage(
+        source: source,
+        imageQuality: 80,
+      );
       if (pickedFile != null) {
         setState(() {
           _selectedImage = pickedFile;
@@ -48,7 +72,9 @@ class _AddItemScreenState extends State<AddItemScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error picking image: $e')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error picking image: $e')));
       }
     }
   }
@@ -85,22 +111,23 @@ class _AddItemScreenState extends State<AddItemScreen> {
   }
 
   Future<void> _selectDate(BuildContext context) async {
+    final today = FoodStatusUtils.malaysiaTodayDateOnly();
     final DateTime? picked = await showDatePicker(
       context: context,
-      initialDate: _selectedDate ?? DateTime.now(),
-      firstDate: DateTime.now(),
+      initialDate: _selectedDate ?? today,
+      firstDate: DateTime(today.year - 1, today.month, today.day),
       lastDate: DateTime(2101),
       builder: (context, child) {
         return Theme(
           data: Theme.of(context).copyWith(
             colorScheme: const ColorScheme.light(
-              primary: Color(0xFF052A1E), 
-              onPrimary: Colors.white, 
-              onSurface: Color(0xFF052A1E), 
+              primary: Color(0xFF052A1E),
+              onPrimary: Colors.white,
+              onSurface: Color(0xFF052A1E),
             ),
             textButtonTheme: TextButtonThemeData(
               style: TextButton.styleFrom(
-                foregroundColor: const Color(0xFF34A853), 
+                foregroundColor: const Color(0xFF34A853),
               ),
             ),
           ),
@@ -149,13 +176,14 @@ class _AddItemScreenState extends State<AddItemScreen> {
         }
       }
 
-      final DateFormat formatter = DateFormat('MMM dd, yyyy');
-      final formattedDate = formatter.format(_selectedDate!);
-      
-      final daysRemaining = _selectedDate!.difference(DateTime.now()).inDays;
-      final quantityDisplay = '${_quantityController.text.trim()} ${_selectedUnit == 'Unit' ? 'pcs' : _selectedUnit}';
+      final formattedDate = FoodStatusUtils.formatExpiryDate(_selectedDate!);
+      final daysRemaining = FoodStatusUtils.daysRemaining(_selectedDate!);
+      final freshnessStatus = FoodStatusUtils.statusForDays(daysRemaining);
+      final quantityDisplay =
+          '${_quantityController.text.trim()} ${_selectedUnit == 'Unit' ? 'pcs' : _selectedUnit}';
 
-      await FirebaseFirestore.instance.collection('foodItems').add({
+      final docRef = FirebaseFirestore.instance.collection('foodItems').doc();
+      await docRef.set({
         'userId': user.uid,
         'foodName': _nameController.text.trim(),
         'expiryDate': formattedDate,
@@ -164,12 +192,22 @@ class _AddItemScreenState extends State<AddItemScreen> {
         'storageSuggestion': 'See Storage Guide for details.',
         'thumbnailPath': downloadUrl,
         'localImagePath': downloadUrl,
-        'freshnessStatus': daysRemaining > 3 ? 'Fresh' : (daysRemaining >= 0 ? 'Good' : 'Spoiled'),
-        'freshnessScore': daysRemaining > 5 ? 100 : (daysRemaining > 0 ? 75 : 0),
+        'freshnessStatus': freshnessStatus,
+        'freshnessScore': FoodStatusUtils.freshnessScoreForStatus(
+          freshnessStatus,
+        ),
         'estimatedDaysRemaining': daysRemaining,
         'scanDate': FieldValue.serverTimestamp(),
-        'source': 'manual'
+        'source': 'manual',
       });
+
+      if (daysRemaining >= 0) {
+        await ExpiryNotificationService.instance.scheduleExpiryReminder(
+          itemId: docRef.id,
+          foodName: _nameController.text.trim(),
+          expiryDate: _selectedDate!,
+        );
+      }
 
       if (mounted) {
         Navigator.pop(context);
@@ -179,9 +217,9 @@ class _AddItemScreenState extends State<AddItemScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error: $e')));
       }
     } finally {
       if (mounted) {
@@ -209,7 +247,9 @@ class _AddItemScreenState extends State<AddItemScreen> {
         ),
       ),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: Color(0xFF052A1E)))
+          ? const Center(
+              child: CircularProgressIndicator(color: Color(0xFF052A1E)),
+            )
           : SingleChildScrollView(
               padding: const EdgeInsets.all(24.0),
               child: Form(
@@ -232,29 +272,45 @@ class _AddItemScreenState extends State<AddItemScreen> {
                                 color: Colors.black.withValues(alpha: 0.05),
                                 blurRadius: 10,
                                 offset: const Offset(0, 4),
-                              )
+                              ),
                             ],
                           ),
                           child: _selectedImage != null
                               ? ClipRRect(
                                   borderRadius: BorderRadius.circular(16),
                                   child: kIsWeb
-                                      ? Image.network(_selectedImage!.path, fit: BoxFit.cover)
-                                      : Image.file(File(_selectedImage!.path), fit: BoxFit.cover),
+                                      ? Image.network(
+                                          _selectedImage!.path,
+                                          fit: BoxFit.cover,
+                                        )
+                                      : Image.file(
+                                          File(_selectedImage!.path),
+                                          fit: BoxFit.cover,
+                                        ),
                                 )
                               : const Column(
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
-                                    Icon(Icons.add_a_photo, size: 32, color: Color(0xFF34A853)),
+                                    Icon(
+                                      Icons.add_a_photo,
+                                      size: 32,
+                                      color: Color(0xFF34A853),
+                                    ),
                                     SizedBox(height: 8),
-                                    Text('Add Photo', style: TextStyle(color: Color(0xFF666666), fontSize: 12)),
+                                    Text(
+                                      'Add Photo',
+                                      style: TextStyle(
+                                        color: Color(0xFF666666),
+                                        fontSize: 12,
+                                      ),
+                                    ),
                                   ],
                                 ),
                         ),
                       ),
                     ),
                     const SizedBox(height: 24),
-                    
+
                     _buildTextField(
                       controller: _nameController,
                       label: 'Food Name',
@@ -267,7 +323,7 @@ class _AddItemScreenState extends State<AddItemScreen> {
                       },
                     ),
                     const SizedBox(height: 20),
-                    
+
                     // Dropdown for Category matching your application field styling
                     _buildDropdownField(
                       label: 'Category',
@@ -275,8 +331,10 @@ class _AddItemScreenState extends State<AddItemScreen> {
                       value: _selectedCategory,
                       hint: 'Select Category',
                       items: _categories,
-                      onChanged: (val) => setState(() => _selectedCategory = val),
-                      validator: (value) => value == null ? 'Please select a category' : null,
+                      onChanged: (val) =>
+                          setState(() => _selectedCategory = val),
+                      validator: (value) =>
+                          value == null ? 'Please select a category' : null,
                     ),
                     const SizedBox(height: 20),
 
@@ -309,21 +367,24 @@ class _AddItemScreenState extends State<AddItemScreen> {
                             value: _selectedUnit,
                             hint: 'Unit',
                             items: _units,
-                            onChanged: (val) => setState(() => _selectedUnit = val!),
+                            onChanged: (val) =>
+                                setState(() => _selectedUnit = val!),
                           ),
                         ),
                       ],
                     ),
                     const SizedBox(height: 20),
-                    
+
                     GestureDetector(
                       onTap: () => _selectDate(context),
                       child: AbsorbPointer(
                         child: _buildTextField(
                           controller: TextEditingController(
-                            text: _selectedDate == null 
-                                ? '' 
-                                : DateFormat('MMM dd, yyyy').format(_selectedDate!),
+                            text: _selectedDate == null
+                                ? ''
+                                : DateFormat(
+                                    'MMM dd, yyyy',
+                                  ).format(_selectedDate!),
                           ),
                           label: 'Expiry Date',
                           icon: Icons.calendar_today,
@@ -338,7 +399,7 @@ class _AddItemScreenState extends State<AddItemScreen> {
                       ),
                     ),
                     const SizedBox(height: 20),
-                    
+
                     const SizedBox(height: 32),
 
                     ElevatedButton(
@@ -418,7 +479,10 @@ class _AddItemScreenState extends State<AddItemScreen> {
   }) {
     return DropdownButtonFormField<String>(
       initialValue: value,
-      hint: Text(hint, style: const TextStyle(color: Color(0xFF666666), fontSize: 14)),
+      hint: Text(
+        hint,
+        style: const TextStyle(color: Color(0xFF666666), fontSize: 14),
+      ),
       onChanged: onChanged,
       validator: validator,
       decoration: InputDecoration(

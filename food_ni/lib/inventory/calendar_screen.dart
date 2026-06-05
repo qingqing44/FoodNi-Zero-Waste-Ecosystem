@@ -10,18 +10,21 @@ import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 
+import '../notifications/expiry_notification_service.dart';
+import 'food_status_utils.dart';
 import 'inventory_details_screen.dart';
 
 class InventoryCalendarScreen extends StatefulWidget {
   const InventoryCalendarScreen({super.key});
 
   @override
-  State<InventoryCalendarScreen> createState() => _InventoryCalendarScreenState();
+  State<InventoryCalendarScreen> createState() =>
+      _InventoryCalendarScreenState();
 }
 
 class _InventoryCalendarScreenState extends State<InventoryCalendarScreen> {
-  DateTime _selectedDate = DateTime.now();
-  DateTime _focusedDate = DateTime.now();
+  DateTime _selectedDate = FoodStatusUtils.malaysiaTodayDateOnly();
+  DateTime _focusedDate = FoodStatusUtils.malaysiaTodayDateOnly();
   final _noteController = TextEditingController();
   bool _isSavingNote = false;
   String _currentNoteDate = '';
@@ -45,7 +48,7 @@ class _InventoryCalendarScreenState extends State<InventoryCalendarScreen> {
 
     final dateKey = DateFormat('yyyy-MM-dd').format(date);
     _currentNoteDate = dateKey;
-    
+
     try {
       final doc = await FirebaseFirestore.instance
           .collection('calendarNotes')
@@ -110,9 +113,9 @@ class _InventoryCalendarScreenState extends State<InventoryCalendarScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to save note: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to save note: $e')));
       }
     } finally {
       if (mounted) {
@@ -133,7 +136,8 @@ class _InventoryCalendarScreenState extends State<InventoryCalendarScreen> {
     }
 
     if (month == DateTime.february) {
-      final isLeapYear = (year % 4 == 0) && (year % 100 != 0 || year % 400 == 0);
+      final isLeapYear =
+          (year % 4 == 0) && (year % 100 != 0 || year % 400 == 0);
       return isLeapYear ? 29 : 28;
     }
     const daysInMonth = [31, -1, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
@@ -213,9 +217,7 @@ class _InventoryCalendarScreenState extends State<InventoryCalendarScreen> {
   Future<void> _scheduleItem(DocumentReference docRef, DateTime date) async {
     final formattedDate = DateFormat('MMM dd, yyyy').format(date);
     try {
-      await docRef.update({
-        'consumeDate': formattedDate,
-      });
+      await docRef.update({'consumeDate': formattedDate});
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -226,18 +228,16 @@ class _InventoryCalendarScreenState extends State<InventoryCalendarScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error scheduling item: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error scheduling item: $e')));
       }
     }
   }
 
   Future<void> _unscheduleItem(DocumentReference docRef) async {
     try {
-      await docRef.update({
-        'consumeDate': FieldValue.delete(),
-      });
+      await docRef.update({'consumeDate': FieldValue.delete()});
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -248,15 +248,16 @@ class _InventoryCalendarScreenState extends State<InventoryCalendarScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error unscheduling item: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error unscheduling item: $e')));
       }
     }
   }
 
   Future<void> _markAsConsumed(DocumentReference docRef) async {
     try {
+      await ExpiryNotificationService.instance.cancelReminder(docRef.id);
       // Deleting the item is consistent with current deletion actions in inventory
       await docRef.delete();
       if (mounted) {
@@ -269,9 +270,9 @@ class _InventoryCalendarScreenState extends State<InventoryCalendarScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error updating item: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error updating item: $e')));
       }
     }
   }
@@ -296,10 +297,7 @@ class _InventoryCalendarScreenState extends State<InventoryCalendarScreen> {
         iconTheme: const IconThemeData(color: brandColor),
         title: const Text(
           'Food Calendar',
-          style: TextStyle(
-            color: brandColor,
-            fontWeight: FontWeight.bold,
-          ),
+          style: TextStyle(color: brandColor, fontWeight: FontWeight.bold),
         ),
       ),
       body: StreamBuilder<QuerySnapshot>(
@@ -312,7 +310,9 @@ class _InventoryCalendarScreenState extends State<InventoryCalendarScreen> {
             return Center(child: Text('Error: ${snapshot.error}'));
           }
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator(color: brandColor));
+            return const Center(
+              child: CircularProgressIndicator(color: brandColor),
+            );
           }
 
           final allDocs = snapshot.data?.docs ?? [];
@@ -324,13 +324,15 @@ class _InventoryCalendarScreenState extends State<InventoryCalendarScreen> {
 
           for (final doc in allDocs) {
             final data = doc.data() as Map<String, dynamic>;
-            
+
             // Expiry Date Mapping
             final expiryStr = data['expiryDate'] as String?;
             if (expiryStr != null && expiryStr != 'N/A') {
               try {
                 final dateParsed = DateFormat('MMM dd, yyyy').parse(expiryStr);
-                final canonicalKey = DateFormat('yyyy-MM-dd').format(dateParsed);
+                final canonicalKey = DateFormat(
+                  'yyyy-MM-dd',
+                ).format(dateParsed);
                 expiringMap.putIfAbsent(canonicalKey, () => []).add(doc);
               } catch (_) {}
             }
@@ -340,7 +342,9 @@ class _InventoryCalendarScreenState extends State<InventoryCalendarScreen> {
             if (consumeStr != null) {
               try {
                 final dateParsed = DateFormat('MMM dd, yyyy').parse(consumeStr);
-                final canonicalKey = DateFormat('yyyy-MM-dd').format(dateParsed);
+                final canonicalKey = DateFormat(
+                  'yyyy-MM-dd',
+                ).format(dateParsed);
                 scheduledMap.putIfAbsent(canonicalKey, () => []).add(doc);
               } catch (_) {}
             }
@@ -355,7 +359,10 @@ class _InventoryCalendarScreenState extends State<InventoryCalendarScreen> {
               // Premium Calendar Widget
               Container(
                 margin: const EdgeInsets.symmetric(horizontal: 22, vertical: 4),
-                padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 10),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 11,
+                  vertical: 10,
+                ),
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(20),
@@ -375,7 +382,11 @@ class _InventoryCalendarScreenState extends State<InventoryCalendarScreen> {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         IconButton(
-                          icon: const Icon(Icons.chevron_left, color: brandColor, size: 20),
+                          icon: const Icon(
+                            Icons.chevron_left,
+                            color: brandColor,
+                            size: 20,
+                          ),
                           onPressed: _prevMonth,
                           padding: EdgeInsets.zero,
                           constraints: const BoxConstraints(),
@@ -390,7 +401,11 @@ class _InventoryCalendarScreenState extends State<InventoryCalendarScreen> {
                           ),
                         ),
                         IconButton(
-                          icon: const Icon(Icons.chevron_right, color: brandColor, size: 20),
+                          icon: const Icon(
+                            Icons.chevron_right,
+                            color: brandColor,
+                            size: 20,
+                          ),
                           onPressed: _nextMonth,
                           padding: EdgeInsets.zero,
                           constraints: const BoxConstraints(),
@@ -402,7 +417,9 @@ class _InventoryCalendarScreenState extends State<InventoryCalendarScreen> {
                     // Weekdays header
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceAround,
-                      children: ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map((day) {
+                      children: ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map((
+                        day,
+                      ) {
                         return Expanded(
                           child: Center(
                             child: Text(
@@ -422,21 +439,32 @@ class _InventoryCalendarScreenState extends State<InventoryCalendarScreen> {
                     GridView.builder(
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
-                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 7,
-                        mainAxisSpacing: 4,
-                        crossAxisSpacing: 4,
-                      ),
+                      gridDelegate:
+                          const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 7,
+                            mainAxisSpacing: 4,
+                            crossAxisSpacing: 4,
+                          ),
                       itemCount: 42,
                       itemBuilder: (context, index) {
                         final date = calendarDays[index];
-                        final isSelected = DateUtils.isSameDay(date, _selectedDate);
-                        final isToday = DateUtils.isSameDay(date, DateTime.now());
+                        final isSelected = DateUtils.isSameDay(
+                          date,
+                          _selectedDate,
+                        );
+                        final isToday = DateUtils.isSameDay(
+                          date,
+                          FoodStatusUtils.malaysiaTodayDateOnly(),
+                        );
                         final isCurrentMonth = date.month == _focusedDate.month;
 
-                        final canonicalDateKey = DateFormat('yyyy-MM-dd').format(date);
-                        final dayExpirations = expiringMap[canonicalDateKey] ?? [];
-                        final dayScheduled = scheduledMap[canonicalDateKey] ?? [];
+                        final canonicalDateKey = DateFormat(
+                          'yyyy-MM-dd',
+                        ).format(date);
+                        final dayExpirations =
+                            expiringMap[canonicalDateKey] ?? [];
+                        final dayScheduled =
+                            scheduledMap[canonicalDateKey] ?? [];
 
                         return GestureDetector(
                           onTap: () {
@@ -450,12 +478,16 @@ class _InventoryCalendarScreenState extends State<InventoryCalendarScreen> {
                             decoration: BoxDecoration(
                               color: isSelected
                                   ? brandColor
-                                  : (isToday ? const Color(0xFFE8F3EF) : Colors.transparent),
+                                  : (isToday
+                                        ? const Color(0xFFE8F3EF)
+                                        : Colors.transparent),
                               borderRadius: BorderRadius.circular(10),
                               border: Border.all(
                                 color: isSelected
                                     ? Colors.transparent
-                                    : (isToday ? accentGreen : Colors.transparent),
+                                    : (isToday
+                                          ? accentGreen
+                                          : Colors.transparent),
                                 width: 1.2,
                               ),
                             ),
@@ -471,10 +503,11 @@ class _InventoryCalendarScreenState extends State<InventoryCalendarScreen> {
                                         color: isSelected
                                             ? Colors.white
                                             : (isCurrentMonth
-                                                ? brandColor
-                                                : Colors.grey[400]),
-                                        fontWeight:
-                                            (isSelected || isToday) ? FontWeight.bold : FontWeight.normal,
+                                                  ? brandColor
+                                                  : Colors.grey[400]),
+                                        fontWeight: (isSelected || isToday)
+                                            ? FontWeight.bold
+                                            : FontWeight.normal,
                                         fontSize: 12,
                                       ),
                                     ),
@@ -482,22 +515,32 @@ class _InventoryCalendarScreenState extends State<InventoryCalendarScreen> {
                                     // Row of dot indicators
                                     if (dayExpirations.isNotEmpty)
                                       Row(
-                                        mainAxisAlignment: MainAxisAlignment.center,
-                                        children: dayExpirations.take(3).map((doc) {
-                                          final data = doc.data() as Map<String, dynamic>;
-                                          final status = (data['freshnessStatus'] as String? ?? '').toLowerCase();
-                                          Color dotColor = accentGreen;
-                                          if (status == 'spoiled') {
-                                            dotColor = Colors.red;
-                                          } else if (status == 'good' || status.contains('consume')) {
-                                            dotColor = Colors.orange;
-                                          }
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
+                                        children: dayExpirations.take(3).map((
+                                          doc,
+                                        ) {
+                                          final data =
+                                              doc.data()
+                                                  as Map<String, dynamic>;
+                                          final status =
+                                              FoodStatusUtils.statusFromItemData(
+                                                data,
+                                              );
+                                          final dotColor =
+                                              FoodStatusUtils.statusColor(
+                                                status,
+                                              );
                                           return Container(
-                                            margin: const EdgeInsets.symmetric(horizontal: 1),
+                                            margin: const EdgeInsets.symmetric(
+                                              horizontal: 1,
+                                            ),
                                             width: 4,
                                             height: 4,
                                             decoration: BoxDecoration(
-                                              color: isSelected ? Colors.white : dotColor,
+                                              color: isSelected
+                                                  ? Colors.white
+                                                  : dotColor,
                                               shape: BoxShape.circle,
                                             ),
                                           );
@@ -515,7 +558,9 @@ class _InventoryCalendarScreenState extends State<InventoryCalendarScreen> {
                                     child: Icon(
                                       Icons.restaurant,
                                       size: 8,
-                                      color: isSelected ? accentGreen : brandColor,
+                                      color: isSelected
+                                          ? accentGreen
+                                          : brandColor,
                                     ),
                                   ),
                               ],
@@ -534,7 +579,9 @@ class _InventoryCalendarScreenState extends State<InventoryCalendarScreen> {
                   width: double.infinity,
                   decoration: const BoxDecoration(
                     color: Colors.white,
-                    borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
+                    borderRadius: BorderRadius.vertical(
+                      top: Radius.circular(32),
+                    ),
                     boxShadow: [
                       BoxShadow(
                         color: Colors.black12,
@@ -561,13 +608,21 @@ class _InventoryCalendarScreenState extends State<InventoryCalendarScreen> {
                               ),
                             ),
                             IconButton(
-                              icon: const Icon(Icons.calendar_today, size: 18, color: brandColor),
+                              icon: const Icon(
+                                Icons.calendar_today,
+                                size: 18,
+                                color: brandColor,
+                              ),
                               onPressed: () {
                                 setState(() {
-                                  _selectedDate = DateTime.now();
-                                  _focusedDate = DateTime.now();
+                                  _selectedDate =
+                                      FoodStatusUtils.malaysiaTodayDateOnly();
+                                  _focusedDate =
+                                      FoodStatusUtils.malaysiaTodayDateOnly();
                                 });
-                                _loadNoteForDate(DateTime.now());
+                                _loadNoteForDate(
+                                  FoodStatusUtils.malaysiaTodayDateOnly(),
+                                );
                               },
                               tooltip: 'Go to Today',
                             ),
@@ -588,7 +643,11 @@ class _InventoryCalendarScreenState extends State<InventoryCalendarScreen> {
                             children: [
                               Row(
                                 children: [
-                                  const Icon(Icons.edit_note, color: accentGreen, size: 20),
+                                  const Icon(
+                                    Icons.edit_note,
+                                    color: accentGreen,
+                                    size: 20,
+                                  ),
                                   const SizedBox(width: 8),
                                   const Text(
                                     'Daily Markdown Notes',
@@ -626,10 +685,17 @@ class _InventoryCalendarScreenState extends State<InventoryCalendarScreen> {
                               TextField(
                                 controller: _noteController,
                                 maxLines: 2,
-                                style: const TextStyle(fontSize: 13, color: Color(0xFF4A4A4A)),
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  color: Color(0xFF4A4A4A),
+                                ),
                                 decoration: const InputDecoration(
-                                  hintText: 'Mark down meal plans, groceries, or notes...',
-                                  hintStyle: TextStyle(color: Colors.grey, fontSize: 13),
+                                  hintText:
+                                      'Mark down meal plans, groceries, or notes...',
+                                  hintStyle: TextStyle(
+                                    color: Colors.grey,
+                                    fontSize: 13,
+                                  ),
                                   border: InputBorder.none,
                                   enabledBorder: InputBorder.none,
                                   focusedBorder: InputBorder.none,
@@ -663,11 +729,16 @@ class _InventoryCalendarScreenState extends State<InventoryCalendarScreen> {
                             padding: const EdgeInsets.symmetric(vertical: 12),
                             child: Text(
                               'No food items expiring on this day.',
-                              style: TextStyle(color: Colors.grey[500], fontSize: 13),
+                              style: TextStyle(
+                                color: Colors.grey[500],
+                                fontSize: 13,
+                              ),
                             ),
                           )
                         else
-                          ...expiringToday.map((doc) => _buildEventItemCard(doc, isExpiry: true)),
+                          ...expiringToday.map(
+                            (doc) => _buildEventItemCard(doc, isExpiry: true),
+                          ),
 
                         const SizedBox(height: 24),
 
@@ -684,9 +755,13 @@ class _InventoryCalendarScreenState extends State<InventoryCalendarScreen> {
                               ),
                             ),
                             TextButton.icon(
-                              onPressed: () => _showScheduleBottomSheet(allDocs),
+                              onPressed: () =>
+                                  _showScheduleBottomSheet(allDocs),
                               icon: const Icon(Icons.add, size: 16),
-                              label: const Text('Schedule', style: TextStyle(fontSize: 12)),
+                              label: const Text(
+                                'Schedule',
+                                style: TextStyle(fontSize: 12),
+                              ),
                               style: TextButton.styleFrom(
                                 foregroundColor: accentGreen,
                                 padding: EdgeInsets.zero,
@@ -701,11 +776,16 @@ class _InventoryCalendarScreenState extends State<InventoryCalendarScreen> {
                             padding: const EdgeInsets.symmetric(vertical: 12),
                             child: Text(
                               'No food items planned for this day.',
-                              style: TextStyle(color: Colors.grey[500], fontSize: 13),
+                              style: TextStyle(
+                                color: Colors.grey[500],
+                                fontSize: 13,
+                              ),
                             ),
                           )
                         else
-                          ...scheduledToday.map((doc) => _buildEventItemCard(doc, isExpiry: false)),
+                          ...scheduledToday.map(
+                            (doc) => _buildEventItemCard(doc, isExpiry: false),
+                          ),
                         const SizedBox(height: 60),
                       ],
                     ),
@@ -719,19 +799,19 @@ class _InventoryCalendarScreenState extends State<InventoryCalendarScreen> {
     );
   }
 
-  Widget _buildEventItemCard(QueryDocumentSnapshot doc, {required bool isExpiry}) {
+  Widget _buildEventItemCard(
+    QueryDocumentSnapshot doc, {
+    required bool isExpiry,
+  }) {
     final data = doc.data() as Map<String, dynamic>;
     final foodName = data['foodName'] as String? ?? 'Unknown Item';
     final quantity = data['quantity'] as String? ?? '1 unit';
-    final freshnessStatus = data['freshnessStatus'] as String? ?? '';
-    final thumbPath = (data['thumbnailPath'] as String?) ?? (data['localImagePath'] as String?);
+    final freshnessStatus = FoodStatusUtils.statusFromItemData(data);
+    final thumbPath =
+        (data['thumbnailPath'] as String?) ??
+        (data['localImagePath'] as String?);
 
-    Color statusColor = Colors.grey;
-    final s = freshnessStatus.toLowerCase();
-    if (s == 'fresh') statusColor = const Color(0xFF34A853);
-    if (s == 'good') statusColor = const Color(0xFF1A73E8);
-    if (s.contains('consume')) statusColor = Colors.orange;
-    if (s == 'spoiled') statusColor = Colors.red;
+    final statusColor = FoodStatusUtils.statusColor(freshnessStatus);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -796,14 +876,21 @@ class _InventoryCalendarScreenState extends State<InventoryCalendarScreen> {
                       if (freshnessStatus.isNotEmpty) ...[
                         const SizedBox(width: 8),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 1.5,
+                          ),
                           decoration: BoxDecoration(
                             color: statusColor.withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(4),
                           ),
                           child: Text(
                             freshnessStatus,
-                            style: TextStyle(color: statusColor, fontSize: 9, fontWeight: FontWeight.bold),
+                            style: TextStyle(
+                              color: statusColor,
+                              fontSize: 9,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ),
                       ],
@@ -816,13 +903,21 @@ class _InventoryCalendarScreenState extends State<InventoryCalendarScreen> {
           // Action Buttons
           if (isExpiry) ...[
             IconButton(
-              icon: const Icon(Icons.check_circle_outline, color: Color(0xFF34A853), size: 20),
+              icon: const Icon(
+                Icons.check_circle_outline,
+                color: Color(0xFF34A853),
+                size: 20,
+              ),
               onPressed: () => _markAsConsumed(doc.reference),
               tooltip: 'Mark as Consumed',
             ),
           ] else ...[
             IconButton(
-              icon: const Icon(Icons.remove_circle_outline, color: Colors.redAccent, size: 20),
+              icon: const Icon(
+                Icons.remove_circle_outline,
+                color: Colors.redAccent,
+                size: 20,
+              ),
               onPressed: () => _unscheduleItem(doc.reference),
               tooltip: 'Remove Plan',
             ),
@@ -833,7 +928,10 @@ class _InventoryCalendarScreenState extends State<InventoryCalendarScreen> {
   }
 
   Widget _buildThumbnail(String? path, {double size = 54}) {
-    if (path != null && (path.startsWith('http') || path.startsWith('data:') || path.startsWith('blob:'))) {
+    if (path != null &&
+        (path.startsWith('http') ||
+            path.startsWith('data:') ||
+            path.startsWith('blob:'))) {
       return Image.network(
         path,
         width: size,
@@ -883,11 +981,11 @@ class _InventoryCalendarScreenState extends State<InventoryCalendarScreen> {
   }
 
   Widget _placeholder(double size) => Container(
-        width: size,
-        height: size,
-        color: Colors.grey[200],
-        child: const Icon(Icons.fastfood, color: Colors.grey, size: 20),
-      );
+    width: size,
+    height: size,
+    color: Colors.grey[200],
+    child: const Icon(Icons.fastfood, color: Colors.grey, size: 20),
+  );
 }
 
 class _ScheduleBottomSheetContent extends StatefulWidget {
@@ -904,11 +1002,14 @@ class _ScheduleBottomSheetContent extends StatefulWidget {
   });
 
   @override
-  State<_ScheduleBottomSheetContent> createState() => _ScheduleBottomSheetContentState();
+  State<_ScheduleBottomSheetContent> createState() =>
+      _ScheduleBottomSheetContentState();
 }
 
-class _ScheduleBottomSheetContentState extends State<_ScheduleBottomSheetContent> {
-  final DraggableScrollableController _sheetController = DraggableScrollableController();
+class _ScheduleBottomSheetContentState
+    extends State<_ScheduleBottomSheetContent> {
+  final DraggableScrollableController _sheetController =
+      DraggableScrollableController();
 
   @override
   void dispose() {
@@ -941,7 +1042,8 @@ class _ScheduleBottomSheetContentState extends State<_ScheduleBottomSheetContent
                   double targetSize = (currentSize + 0.08).clamp(0.3, 0.95);
                   _sheetController.jumpTo(targetSize);
                 } else if (delta < 0 && currentSize > 0.6) {
-                  if (scrollController.hasClients && scrollController.offset <= 0) {
+                  if (scrollController.hasClients &&
+                      scrollController.offset <= 0) {
                     double targetSize = (currentSize - 0.08).clamp(0.6, 0.95);
                     _sheetController.jumpTo(targetSize);
                   }
@@ -992,7 +1094,10 @@ class _ScheduleBottomSheetContentState extends State<_ScheduleBottomSheetContent
                         ),
                         Text(
                           'Plan to consume these food items on ${DateFormat('MMMM dd, yyyy').format(widget.selectedDate)}',
-                          style: TextStyle(color: Colors.grey[600], fontSize: 13),
+                          style: TextStyle(
+                            color: Colors.grey[600],
+                            fontSize: 13,
+                          ),
                         ),
                         const SizedBox(height: 16),
                       ],
@@ -1005,11 +1110,18 @@ class _ScheduleBottomSheetContentState extends State<_ScheduleBottomSheetContent
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Icon(Icons.kitchen_outlined, size: 48, color: Colors.grey[400]),
+                            Icon(
+                              Icons.kitchen_outlined,
+                              size: 48,
+                              color: Colors.grey[400],
+                            ),
                             const SizedBox(height: 12),
                             Text(
                               'No available food items to schedule.',
-                              style: TextStyle(color: Colors.grey[600], fontSize: 14),
+                              style: TextStyle(
+                                color: Colors.grey[600],
+                                fontSize: 14,
+                              ),
                             ),
                           ],
                         ),
@@ -1017,39 +1129,47 @@ class _ScheduleBottomSheetContentState extends State<_ScheduleBottomSheetContent
                     )
                   else
                     SliverList(
-                      delegate: SliverChildBuilderDelegate(
-                        (context, index) {
-                          final doc = widget.availableItems[index];
-                          final data = doc.data() as Map<String, dynamic>;
-                          final foodName = data['foodName'] as String? ?? 'Unknown';
-                          final qty = data['quantity'] as String? ?? '1 unit';
-                          final thumb = data['thumbnailPath'] as String? ?? data['localImagePath'] as String?;
+                      delegate: SliverChildBuilderDelegate((context, index) {
+                        final doc = widget.availableItems[index];
+                        final data = doc.data() as Map<String, dynamic>;
+                        final foodName =
+                            data['foodName'] as String? ?? 'Unknown';
+                        final qty = data['quantity'] as String? ?? '1 unit';
+                        final thumb =
+                            data['thumbnailPath'] as String? ??
+                            data['localImagePath'] as String?;
 
-                          return ListTile(
-                            contentPadding: const EdgeInsets.symmetric(vertical: 4),
-                            leading: ClipRRect(
-                              borderRadius: BorderRadius.circular(8),
-                              child: widget.buildThumbnail(thumb, size: 48),
+                        return ListTile(
+                          contentPadding: const EdgeInsets.symmetric(
+                            vertical: 4,
+                          ),
+                          leading: ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: widget.buildThumbnail(thumb, size: 48),
+                          ),
+                          title: Text(
+                            foodName,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF052A1E),
                             ),
-                            title: Text(
-                              foodName,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                color: Color(0xFF052A1E),
-                              ),
+                          ),
+                          subtitle: Text(qty),
+                          trailing: IconButton(
+                            icon: const Icon(
+                              Icons.add_circle_outline,
+                              color: Color(0xFF34A853),
                             ),
-                            subtitle: Text(qty),
-                            trailing: IconButton(
-                              icon: const Icon(Icons.add_circle_outline, color: Color(0xFF34A853)),
-                              onPressed: () async {
-                                Navigator.pop(context);
-                                await widget.onSchedule(doc.reference, widget.selectedDate);
-                              },
-                            ),
-                          );
-                        },
-                        childCount: widget.availableItems.length,
-                      ),
+                            onPressed: () async {
+                              Navigator.pop(context);
+                              await widget.onSchedule(
+                                doc.reference,
+                                widget.selectedDate,
+                              );
+                            },
+                          ),
+                        );
+                      }, childCount: widget.availableItems.length),
                     ),
                 ],
               ),

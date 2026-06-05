@@ -4,12 +4,13 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 
+import '../notifications/expiry_notification_service.dart';
 import 'add_item_screen.dart';
 import 'calendar_screen.dart';
+import 'food_status_utils.dart';
 import 'inventory_details_screen.dart';
 
 /// Displays the current user's scanned food inventory from Firestore.
@@ -22,10 +23,23 @@ class InventoryScreen extends StatefulWidget {
 }
 
 class _InventoryScreenState extends State<InventoryScreen> {
+  static const _statusOptions = [
+    'All',
+    FoodStatusUtils.fresh,
+    FoodStatusUtils.expiring,
+    FoodStatusUtils.expired,
+  ];
+
   final _searchController = TextEditingController();
   String _searchQuery = '';
   String _selectedCategory = 'All';
   String _selectedStatus = 'All';
+
+  @override
+  void initState() {
+    super.initState();
+    Future.microtask(ExpiryNotificationService.instance.requestPermissions);
+  }
 
   @override
   void dispose() {
@@ -33,26 +47,11 @@ class _InventoryScreenState extends State<InventoryScreen> {
     super.dispose();
   }
 
-  // ---------------------------------------------------------------------------
-  // Freshness badge colour helpers (consistent with FoodDetailsScreen)
-  // ---------------------------------------------------------------------------
-
-  Color _statusColor(String? status) {
-    final s = (status ?? '').toLowerCase();
-    if (s == 'fresh') return const Color(0xFF34A853);
-    if (s == 'good') return const Color(0xFF1A73E8);
-    if (s.contains('consume')) return Colors.orange;
-    if (s == 'spoiled') return Colors.red;
-    return Colors.grey;
-  }
-
-  // ---------------------------------------------------------------------------
-
   bool _matchesFilters(QueryDocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
     final foodName = (data['foodName'] as String? ?? '').toLowerCase();
     final category = data['category'] as String? ?? '';
-    final freshnessStatus = data['freshnessStatus'] as String? ?? '';
+    final freshnessStatus = FoodStatusUtils.statusFromItemData(data);
     final query = _searchQuery.trim().toLowerCase();
 
     final matchesSearch =
@@ -284,7 +283,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
           }
 
           final categories = _filterOptions(docs, 'category');
-          final statuses = _filterOptions(docs, 'freshnessStatus');
+          final statuses = _statusOptions;
           final filteredDocs = docs.where(_matchesFilters).toList();
 
           return Column(
@@ -341,10 +340,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
                               );
                             },
                             borderRadius: BorderRadius.circular(16),
-                            child: _InventoryCard(
-                              data: data,
-                              statusColor: _statusColor,
-                            ),
+                            child: _InventoryCard(data: data),
                           );
                         },
                       ),
@@ -371,17 +367,18 @@ class _InventoryScreenState extends State<InventoryScreen> {
 
 /// A single inventory card that shows the thumbnail, food name, freshness badge, category chip and estimated days remaining.
 class _InventoryCard extends StatelessWidget {
-  const _InventoryCard({required this.data, required this.statusColor});
+  const _InventoryCard({required this.data});
 
   final Map<String, dynamic> data;
-  final Color Function(String?) statusColor;
 
   @override
   Widget build(BuildContext context) {
     final foodName = data['foodName'] as String? ?? 'Unknown Item';
     final category = data['category'] as String? ?? '';
-    final freshnessStatus = data['freshnessStatus'] as String? ?? '';
-    final freshnessScore = (data['freshnessScore'] as num?)?.toInt() ?? 0;
+    final freshnessStatus = FoodStatusUtils.statusFromItemData(data);
+    final freshnessScore = FoodStatusUtils.freshnessScoreForStatus(
+      freshnessStatus,
+    );
     final String expiryDate = data['expiryDate'] ?? 'N/A';
     int estimatedDaysRemaining =
         (data['estimatedDaysRemaining'] as num?)?.toInt() ?? 0;
@@ -389,22 +386,15 @@ class _InventoryCard extends StatelessWidget {
         (data['thumbnailPath'] as String?) ??
         (data['localImagePath'] as String?);
 
-    final color = statusColor(freshnessStatus);
+    final color = FoodStatusUtils.statusColor(freshnessStatus);
 
-    try {
-      final expiryParsed = DateFormat('MMM dd, yyyy').parse(expiryDate);
-      final today = DateTime.now();
-
-      final cleanToday = DateTime(today.year, today.month, today.day);
-      final cleanExpiry = DateTime(
-        expiryParsed.year,
-        expiryParsed.month,
-        expiryParsed.day,
-      );
-      estimatedDaysRemaining = cleanExpiry.difference(cleanToday).inDays;
-    } catch (_) {
-      // Keep the stored estimate if the legacy expiry value cannot be parsed.
+    final parsedDays = FoodStatusUtils.daysRemainingFromString(expiryDate);
+    if (parsedDays != null) {
+      estimatedDaysRemaining = parsedDays;
     }
+    final daysLabel = estimatedDaysRemaining < 0
+        ? 'Expired'
+        : '$estimatedDaysRemaining day${estimatedDaysRemaining == 1 ? '' : 's'} remaining';
 
     return Card(
       margin: const EdgeInsets.only(bottom: 14),
@@ -474,7 +464,7 @@ class _InventoryCard extends StatelessWidget {
                       ),
                       const SizedBox(width: 4),
                       Text(
-                        '$estimatedDaysRemaining day${estimatedDaysRemaining == 1 ? '' : 's'} remaining',
+                        daysLabel,
                         style: TextStyle(
                           fontSize: 12,
                           color: Colors.grey.shade600,
@@ -567,7 +557,9 @@ class _InventoryCard extends StatelessWidget {
 
   bool _isNetworkLikePath(String? path) {
     if (path == null || path.isEmpty) return false;
-    return path.startsWith('http') || path.startsWith('data:') || path.startsWith('blob:');
+    return path.startsWith('http') ||
+        path.startsWith('data:') ||
+        path.startsWith('blob:');
   }
 
   Widget _placeholder() => Container(
