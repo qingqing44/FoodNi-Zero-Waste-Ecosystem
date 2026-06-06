@@ -110,22 +110,29 @@ class _InventoryScreenState extends State<InventoryScreen> {
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
       child: Column(
         children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFFF0F0F0)),
-            ),
-            child: TextField(
-              controller: _searchController,
-              onChanged: (value) => setState(() => _searchQuery = value),
-              decoration: const InputDecoration(
-                icon: Icon(Icons.search, color: Colors.grey),
-                hintText: 'Search food items...',
-                hintStyle: TextStyle(color: Colors.grey, fontSize: 14),
-                border: InputBorder.none,
+          TextField(
+            controller: _searchController,
+            onChanged: (value) => setState(() => _searchQuery = value),
+            decoration: InputDecoration(
+              prefixIcon: const Icon(Icons.search, color: Colors.grey),
+              hintText: 'Search food items...',
+              hintStyle: const TextStyle(color: Colors.grey, fontSize: 14),
+              filled: true,
+              fillColor: Colors.white,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: Color(0xFFF0F0F0)),
               ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: Color(0xFFF0F0F0)),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: Color(0xFFF0F0F0)),
+              ),
+              isDense: true,
+              contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
             ),
           ),
           const SizedBox(height: 12),
@@ -285,6 +292,19 @@ class _InventoryScreenState extends State<InventoryScreen> {
           final categories = _filterOptions(docs, 'category');
           final statuses = _statusOptions;
           final filteredDocs = docs.where(_matchesFilters).toList();
+
+          filteredDocs.sort((a, b) {
+            final aData = a.data() as Map<String, dynamic>;
+            final bData = b.data() as Map<String, dynamic>;
+            final aDate = FoodStatusUtils.parseExpiryDate(aData['expiryDate'] as String?);
+            final bDate = FoodStatusUtils.parseExpiryDate(bData['expiryDate'] as String?);
+            
+            if (aDate == null && bDate == null) return 0;
+            if (aDate == null) return 1; // Put items without dates at the bottom
+            if (bDate == null) return -1;
+            
+            return bDate.compareTo(aDate); // Latest expiry dates first (descending)
+          });
 
           return Column(
             children: [
