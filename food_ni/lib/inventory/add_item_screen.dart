@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -9,6 +8,7 @@ import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 
+import '../camera/local_image_service.dart';
 import '../notifications/expiry_notification_service.dart';
 import 'food_status_utils.dart';
 
@@ -159,12 +159,15 @@ class _AddItemScreenState extends State<AddItemScreen> {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) throw Exception('User not logged in');
 
-      String? downloadUrl;
+      String? thumbnailPath;
+      String? localImagePath;
 
       if (_selectedImage != null) {
         if (kIsWeb) {
           final bytes = await _selectedImage!.readAsBytes();
-          downloadUrl = 'data:image/jpeg;base64,${base64Encode(bytes)}';
+          thumbnailPath = await LocalImageService().createWebThumbnailDataUrl(
+            bytes,
+          );
         } else {
           final appDir = await getApplicationDocumentsDirectory();
           final foodDir = Directory(p.join(appDir.path, 'food_images'));
@@ -172,7 +175,8 @@ class _AddItemScreenState extends State<AddItemScreen> {
           final timestamp = DateTime.now().millisecondsSinceEpoch;
           final destPath = p.join(foodDir.path, 'food_$timestamp.jpg');
           await File(_selectedImage!.path).copy(destPath);
-          downloadUrl = destPath;
+          localImagePath = destPath;
+          thumbnailPath = destPath;
         }
       }
 
@@ -190,8 +194,8 @@ class _AddItemScreenState extends State<AddItemScreen> {
         'category': _selectedCategory ?? 'Uncategorized',
         'quantity': quantityDisplay,
         'storageSuggestion': 'See Storage Guide for details.',
-        'thumbnailPath': downloadUrl,
-        'localImagePath': downloadUrl,
+        'thumbnailPath': thumbnailPath,
+        'localImagePath': localImagePath,
         'freshnessStatus': freshnessStatus,
         'freshnessScore': FoodStatusUtils.freshnessScoreForStatus(
           freshnessStatus,

@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -225,9 +224,10 @@ class _EditItemScreenState extends State<EditItemScreen> {
       if (_selectedImage != null) {
         if (kIsWeb) {
           final bytes = await _selectedImage!.readAsBytes();
-          final dataUrl = 'data:image/jpeg;base64,${base64Encode(bytes)}';
-          nextLocalImagePath = dataUrl;
-          nextThumbnailPath = dataUrl;
+          nextLocalImagePath = null;
+          nextThumbnailPath = await _localImageService.createWebThumbnailDataUrl(
+            bytes,
+          );
         } else {
           final savedImage = await _localImageService.saveImage(
             File(_selectedImage!.path),
@@ -254,8 +254,10 @@ class _EditItemScreenState extends State<EditItemScreen> {
         'freshnessScore': FoodStatusUtils.freshnessScoreForStatus(
           freshnessStatus,
         ),
-        'localImagePath': nextLocalImagePath,
-        'thumbnailPath': nextThumbnailPath,
+        'localImagePath': kIsWeb
+            ? null
+            : LocalImageService.firestoreSafePath(nextLocalImagePath),
+        'thumbnailPath': LocalImageService.firestoreSafePath(nextThumbnailPath),
         'updatedAt': FieldValue.serverTimestamp(),
       });
 

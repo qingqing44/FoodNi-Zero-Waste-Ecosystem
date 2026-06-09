@@ -6,6 +6,9 @@ import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 
+/// Firestore field size limit is ~1 MiB; keep image strings well below that.
+const int kFirestoreMaxImageFieldBytes = 900000;
+
 /// Manages saving food images and thumbnails to the app's local documents directory.
 ///
 /// Directory layout:
@@ -65,8 +68,40 @@ class LocalImageService {
     }
   }
 
-  /// Web has no writable local file path like mobile, so we keep the selected
-  /// image in a data URL that the UI and Firestore can both reuse.
+  /// Returns null when [path] is too large for a Firestore string field.
+  static String? firestoreSafePath(
+    String? path, {
+    int maxBytes = kFirestoreMaxImageFieldBytes,
+  }) {
+    if (path == null || path.isEmpty) return null;
+    if (path.length > maxBytes) return null;
+    return path;
+  }
+
+  /// Builds a small JPEG data URL suitable for storing in Firestore on web.
+  Future<String?> createWebThumbnailDataUrl(
+    Uint8List bytes, {
+    String mimeType = 'image/jpeg',
+  }) async {
+    try {
+      final compressed = await FlutterImageCompress.compressWithList(
+        bytes,
+        quality: 35,
+        minWidth: 200,
+        minHeight: 200,
+      );
+      if (compressed.isEmpty) return null;
+
+      final dataUrl = dataUrlFromBytes(compressed, mimeType: mimeType);
+      return firestoreSafePath(dataUrl);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Web has no writable local file path like mobile.
+  /// [imagePath] is a full data URL for on-screen preview only.
+  /// [thumbnailPath] is a compressed data URL safe for Firestore, or empty.
   Future<({String imagePath, String thumbnailPath})> saveWebImage(
     Uint8List bytes, {
     String mimeType = 'image/jpeg',
@@ -76,6 +111,7 @@ class LocalImageService {
     }
 
     final dataUrl = dataUrlFromBytes(bytes, mimeType: mimeType);
-    return (imagePath: dataUrl, thumbnailPath: dataUrl);
+    final thumbUrl = await createWebThumbnailDataUrl(bytes, mimeType: mimeType);
+    return (imagePath: dataUrl, thumbnailPath: thumbUrl ?? '');
   }
 }

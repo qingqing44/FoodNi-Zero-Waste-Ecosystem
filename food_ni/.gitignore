@@ -46,6 +46,7 @@ app.*.map.json
 
 # Environment / secrets – NEVER commit these
 .env
+.env.json
 *.env
 
 # Local debug/utility scripts

@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import '../inventory/food_status_utils.dart';
 import '../notifications/expiry_notification_service.dart';
 import '../storage/storage_guide_screen.dart';
+import 'local_image_service.dart';
 
 /// Displays the Gemini analysis result for a scanned food item and lets the
 /// user save it to their Firestore inventory or discard it.
@@ -69,6 +70,15 @@ class _FoodDetailsScreenState extends State<FoodDetailsScreen> {
           widget.foodData['name'] ??
           'Scanned Item';
 
+      final thumbnailPath = LocalImageService.firestoreSafePath(
+        widget.foodData['thumbnailPath'] as String?,
+      );
+      final localImagePath = kIsWeb
+          ? null
+          : LocalImageService.firestoreSafePath(
+              widget.foodData['localImagePath'] as String?,
+            );
+
       // Commit precisely aligned key maps to Firestore
       final docRef = FirebaseFirestore.instance.collection('foodItems').doc();
       await docRef.set({
@@ -82,10 +92,8 @@ class _FoodDetailsScreenState extends State<FoodDetailsScreen> {
             widget.foodData['storageSuggestion'] ??
             widget.foodData['storage'] ??
             'No special storage suggestions provided.',
-        'thumbnailPath':
-            widget.foodData['thumbnailPath'] ??
-            widget.foodData['localImagePath'],
-        'localImagePath': widget.foodData['localImagePath'],
+        'thumbnailPath': thumbnailPath,
+        'localImagePath': localImagePath,
         'caloriesPer100g':
             widget.foodData['caloriesPer100g'] ?? 'Not available',
         'basicRecipes': _basicRecipesFrom(
