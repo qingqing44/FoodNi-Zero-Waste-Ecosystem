@@ -341,27 +341,6 @@ $inventoryContext
               )
             : Column(
                 children: [
-                  if (!_chatService.hasApiKey)
-                    Container(
-                      width: double.infinity,
-                      margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.orange.shade50,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.orange.shade200),
-                      ),
-                      child: const Text(
-                        'Groq API key required for chat. Run with:\n'
-                        'flutter run --dart-define=GROQ_API_KEY=gsk_your_key\n'
-                        'Free key: console.groq.com',
-                        style: TextStyle(fontSize: 12, color: Color(0xFF666666)),
-                      ),
-                    ),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-                    child: _buildSuggestedQuestions(),
-                  ),
                   Expanded(
                     child: ListView.builder(
                       padding: const EdgeInsets.all(16),
@@ -377,7 +356,15 @@ $inventoryContext
                       padding: EdgeInsets.symmetric(vertical: 8.0),
                       child: CircularProgressIndicator(color: Color(0xFF34A853)),
                     ),
-                  _buildInputArea(),
+                  if (_messages.length <= 1)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                      child: _buildSuggestedQuestions(),
+                    ),
+                  SafeArea(
+                    top: false,
+                    child: _buildInputArea(),
+                  ),
                 ],
               ),
       ),
@@ -477,22 +464,28 @@ $inventoryContext
       child: Row(
         children: [
           Expanded(
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF9F8F4),
-                borderRadius: BorderRadius.circular(24),
-                border: Border.all(color: const Color(0xFFE0E0E0)),
-              ),
-              child: TextField(
-                controller: _controller,
-                decoration: const InputDecoration(
-                  hintText: 'Ask about food or recipes...',
-                  hintStyle: TextStyle(color: Colors.grey, fontSize: 14),
-                  border: InputBorder.none,
+            child: TextField(
+              controller: _controller,
+              decoration: InputDecoration(
+                hintText: 'Ask about food or recipes...',
+                hintStyle: const TextStyle(color: Colors.grey, fontSize: 14),
+                filled: true,
+                fillColor: const Color(0xFFF9F8F4),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(24),
+                  borderSide: const BorderSide(color: Color(0xFFE0E0E0)),
                 ),
-                onSubmitted: (_) => _sendMessage(),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(24),
+                  borderSide: const BorderSide(color: Color(0xFFE0E0E0)),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(24),
+                  borderSide: const BorderSide(color: Color(0xFF34A853), width: 1.5),
+                ),
               ),
+              onSubmitted: (_) => _sendMessage(),
             ),
           ),
           const SizedBox(width: 12),

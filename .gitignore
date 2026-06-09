@@ -1,0 +1,5 @@
+# Ignore Functions dependencies
+food_ni/functions/node_modules/
+
+# Ignore separate backend repository
+foodni-chat-backend/

@@ -30,7 +30,7 @@ exports.processFoodImage = onDocumentCreated("image_processing_queue/{docId}", a
         const bucket = admin.storage().bucket();
         const file = bucket.file(storagePath);
         const [buffer] = await file.download();
-        
+
         const base64Image = buffer.toString('base64');
 
         // 2. Call Gemini API for identification, OCR, and storage suggestions
@@ -42,7 +42,7 @@ exports.processFoodImage = onDocumentCreated("image_processing_queue/{docId}", a
                 responseMimeType: "application/json",
             }
         });
-        
+
         const imagePart = {
             inlineData: {
                 data: base64Image,
@@ -81,7 +81,7 @@ exports.processFoodImage = onDocumentCreated("image_processing_queue/{docId}", a
 
     } catch (error) {
         console.error("Error processing food image:", error);
-        
+
         // Optionally update the queue document to indicate failure
         await snap.ref.update({
             status: 'error',
