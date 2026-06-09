@@ -99,6 +99,7 @@ class _FoodDetailsScreenState extends State<FoodDetailsScreen> {
         'basicRecipes': _basicRecipesFrom(
           widget.foodData['basicRecipes'],
         ).map((recipe) => recipe.toMap()).toList(),
+        'detectedItems': widget.foodData['detectedItems'] ?? const [],
 
         'expiryDate': formattedExpiryString,
         'estimatedDaysRemaining': dynamicDaysRemaining,
@@ -192,9 +193,16 @@ class _FoodDetailsScreenState extends State<FoodDetailsScreen> {
     final caloriesPer100g =
         data['caloriesPer100g'] as String? ?? 'Not available';
     final basicRecipes = _basicRecipesFrom(data['basicRecipes']);
+    final storageSuggestion = data['storageSuggestion'] as String? ??
+        'No storage guidance available.';
+    final detectedItems = _detectedItemsFrom(data['detectedItems']);
     final confidence = (data['confidence'] as num?)?.toInt() ?? 0;
     final reasoning = data['reasoning'] as String? ?? 'No reasoning provided.';
     final localImagePath = data['localImagePath'] as String?;
+    final freshnessRecommendation = _freshnessRecommendation(
+      freshnessStatus,
+      estimatedDaysRemaining,
+    );
 
     final statusColor = _statusColor(freshnessStatus);
     final statusBg = _statusBg(freshnessStatus);
@@ -263,6 +271,22 @@ class _FoodDetailsScreenState extends State<FoodDetailsScreen> {
             ),
             const SizedBox(height: 12),
             _buildInfoCard(
+              icon: Icons.kitchen_outlined,
+              title: 'Storage Method',
+              content: storageSuggestion,
+              bgColor: const Color(0xFFE8F3EF),
+              iconColor: const Color(0xFF34A853),
+            ),
+            const SizedBox(height: 12),
+            _buildInfoCard(
+              icon: Icons.recommend_outlined,
+              title: 'Freshness Recommendation',
+              content: freshnessRecommendation,
+              bgColor: const Color(0xFFFFF4E5),
+              iconColor: const Color(0xFFB26A00),
+            ),
+            const SizedBox(height: 12),
+            _buildInfoCard(
               icon: Icons.local_fire_department_outlined,
               title: 'Calories per 100g',
               content: caloriesPer100g,
@@ -274,6 +298,14 @@ class _FoodDetailsScreenState extends State<FoodDetailsScreen> {
               icon: Icons.bar_chart_rounded,
               title: 'Confidence Score',
               content: '$confidence%',
+              bgColor: const Color(0xFFE8F0FE),
+              iconColor: const Color(0xFF1A73E8),
+            ),
+            const SizedBox(height: 12),
+            _buildInfoCard(
+              icon: Icons.category_outlined,
+              title: 'Detected Food Items',
+              content: detectedItems.join(', '),
               bgColor: const Color(0xFFE8F0FE),
               iconColor: const Color(0xFF1A73E8),
             ),
@@ -699,6 +731,42 @@ class _FoodDetailsScreenState extends State<FoodDetailsScreen> {
       result.add(_fallbackRecipes[result.length]);
     }
     return result.take(2).toList();
+  }
+
+  List<String> _detectedItemsFrom(dynamic rawItems) {
+    if (rawItems is List) {
+      final items = rawItems
+          .map((item) {
+            if (item is Map) {
+              final name = item['name']?.toString().trim() ?? '';
+              final confidence = (item['confidence'] as num?)?.toInt();
+              if (name.isEmpty) return null;
+              if (confidence == null || confidence <= 0) return name;
+              return '$name ($confidence%)';
+            }
+            final text = item?.toString().trim() ?? '';
+            return text.isEmpty ? null : text;
+          })
+          .whereType<String>()
+          .toList();
+      if (items.isNotEmpty) return items;
+    }
+    return const ['Unknown item'];
+  }
+
+  String _freshnessRecommendation(String status, int daysRemaining) {
+    if (status == FoodStatusUtils.expired) {
+      return 'This item appears expired. Inspect it carefully and discard it if there are any safety concerns.';
+    }
+    if (status == FoodStatusUtils.expiringSoon) {
+      return daysRemaining <= 0
+          ? 'Use this item today if it is still safe, or discard it if you notice spoilage.'
+          : 'Use this item within the next $daysRemaining day${daysRemaining == 1 ? '' : 's'} to reduce waste.';
+    }
+    if (status == FoodStatusUtils.nearExpiry) {
+      return 'Plan to use this item within the next few days for best quality.';
+    }
+    return 'This item appears fresh. Store it correctly and use it within the estimated shelf life.';
   }
 
   Widget _buildRecipesCard(List<_RecipeCardData> recipes) {

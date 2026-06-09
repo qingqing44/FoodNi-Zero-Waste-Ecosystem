@@ -14,6 +14,12 @@ class AssistantScreen extends StatefulWidget {
 }
 
 class _AssistantScreenState extends State<AssistantScreen> {
+  static const _suggestedQuestions = [
+    'How long can chicken stay in the fridge?',
+    'Can I freeze cooked rice?',
+    'How should I store apples?',
+  ];
+
   final TextEditingController _controller = TextEditingController();
   final List<ChatMessage> _messages = [];
   final AssistantChatService _chatService = AssistantChatService();
@@ -27,6 +33,12 @@ class _AssistantScreenState extends State<AssistantScreen> {
   void initState() {
     super.initState();
     _initializeChat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
   }
 
   /// Loads pantry context, restores prior chat from Firestore, and starts session.
@@ -217,7 +229,8 @@ $inventoryContext
         case FoodStatusUtils.expired:
           expired.add(line);
           break;
-        case FoodStatusUtils.expiring:
+        case FoodStatusUtils.nearExpiry:
+        case FoodStatusUtils.expiringSoon:
           expiring.add(line);
           break;
         default:
@@ -275,7 +288,10 @@ $inventoryContext
 
       await _persistMessage(assistantMessage);
     } catch (e) {
-      final errorMessage = ChatMessage(text: 'Error: $e', isUser: false);
+      final fallbackMessage = e is AssistantChatException
+          ? e.userMessage
+          : AssistantChatService.unavailableMessage;
+      final errorMessage = ChatMessage(text: fallbackMessage, isUser: false);
       setState(() {
         _isLoading = false;
         _messages.add(errorMessage);
@@ -342,6 +358,10 @@ $inventoryContext
                         style: TextStyle(fontSize: 12, color: Color(0xFF666666)),
                       ),
                     ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                    child: _buildSuggestedQuestions(),
+                  ),
                   Expanded(
                     child: ListView.builder(
                       padding: const EdgeInsets.all(16),
@@ -401,6 +421,50 @@ $inventoryContext
         ),
       ),
     );
+  }
+
+  Widget _buildSuggestedQuestions() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Suggested Questions',
+          style: TextStyle(
+            color: Color(0xFF052A1E),
+            fontSize: 13,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: _suggestedQuestions.map((question) {
+            return ActionChip(
+              label: Text(
+                question,
+                style: const TextStyle(
+                  color: Color(0xFF052A1E),
+                  fontSize: 12,
+                ),
+              ),
+              backgroundColor: Colors.white,
+              side: const BorderSide(color: Color(0xFFE0E0E0)),
+              onPressed: _isLoading || _isInitializing
+                  ? null
+                  : () => _applySuggestedQuestion(question),
+            );
+          }).toList(),
+        ),
+      ],
+    );
+  }
+
+  void _applySuggestedQuestion(String question) {
+    _controller
+      ..text = question
+      ..selection = TextSelection.collapsed(offset: question.length);
+    setState(() {});
   }
 
   Widget _buildInputArea() {

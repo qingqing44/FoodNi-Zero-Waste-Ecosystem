@@ -62,7 +62,10 @@ class LocalImageService {
       // If compression fails for any reason, fall back to the full image.
       final finalThumbPath = result?.path ?? imagePath;
 
-      return (imagePath: imagePath, thumbnailPath: finalThumbPath);
+      final relImagePath = p.join('food_images', imageName);
+      final relThumbPath = p.join('food_images', p.basename(finalThumbPath));
+
+      return (imagePath: relImagePath, thumbnailPath: relThumbPath);
     } catch (e) {
       throw Exception('Failed to save image locally: $e');
     }

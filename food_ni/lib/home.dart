@@ -876,9 +876,12 @@ class _HomeScreenState extends State<HomeScreen> {
     } catch (e) {
       if (context.mounted) {
         Navigator.pop(context); // Close loading dialog
+        final message = e is FoodScanException
+            ? e.userMessage
+            : const FoodScanException.unavailable().userMessage;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Scan failed: $e'),
+            content: Text(message),
             backgroundColor: Colors.redAccent,
           ),
         );

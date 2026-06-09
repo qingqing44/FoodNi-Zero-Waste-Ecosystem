@@ -99,6 +99,8 @@ class ExpiryNotificationService {
       if (daysRemaining < 0) return;
 
       final scheduledDate = _reminderDateFor(cleanExpiry);
+      if (scheduledDate == null) return;
+
       await _plugin.zonedSchedule(
         notificationIdForItem(itemId),
         'Food expiring soon',
@@ -134,7 +136,7 @@ class ExpiryNotificationService {
     return itemId.hashCode & 0x7fffffff;
   }
 
-  tz.TZDateTime _reminderDateFor(DateTime expiryDate) {
+  tz.TZDateTime? _reminderDateFor(DateTime expiryDate) {
     final malaysiaLocation = FoodStatusUtils.malaysiaLocation();
     final oneDayBeforeAtNine = tz.TZDateTime(
       malaysiaLocation,
@@ -147,6 +149,6 @@ class ExpiryNotificationService {
     if (oneDayBeforeAtNine.isAfter(now)) {
       return oneDayBeforeAtNine;
     }
-    return now.add(const Duration(minutes: 1));
+    return null;
   }
 }

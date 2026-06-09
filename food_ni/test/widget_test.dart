@@ -1,30 +1,55 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:food_ni/app.dart';
+import 'package:food_ni/inventory/food_status_utils.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp(clientId: 'dummy_client_id'));
+  group('FoodStatusUtils suggested expiry', () {
+    test('calculates produce expiry from purchase date', () {
+      final purchaseDate = DateTime(2026, 6, 9);
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+      final expiryDate = FoodStatusUtils.suggestedExpiryDate(
+        category: 'Produce',
+        purchaseDate: purchaseDate,
+      );
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
+      expect(expiryDate, DateTime(2026, 6, 16));
+    });
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    test('uses fallback shelf life for unknown categories', () {
+      final purchaseDate = DateTime(2026, 6, 9);
+
+      final expiryDate = FoodStatusUtils.suggestedExpiryDate(
+        category: 'Bakery',
+        purchaseDate: purchaseDate,
+      );
+
+      expect(
+        expiryDate,
+        DateTime(
+          2026,
+          6,
+          9 + FoodStatusUtils.defaultManualShelfLifeDays,
+        ),
+      );
+    });
+
+    test('does not calculate expiry without a category', () {
+      final expiryDate = FoodStatusUtils.suggestedExpiryDate(
+        category: null,
+        purchaseDate: DateTime(2026, 6, 9),
+      );
+
+      expect(expiryDate, isNull);
+    });
+
+    test('treats dates on the same day as equal', () {
+      expect(
+        FoodStatusUtils.isSameDate(
+          DateTime(2026, 6, 9, 8, 0),
+          DateTime(2026, 6, 9, 21, 30),
+        ),
+        isTrue,
+      );
+    });
   });
 }

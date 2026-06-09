@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
@@ -10,6 +11,11 @@ class AssistantChatService {
   AssistantChatService({http.Client? client}) : _client = client ?? http.Client();
 
   static const String _apiKey = String.fromEnvironment('GROQ_API_KEY');
+  static const Duration _requestTimeout = Duration(seconds: 20);
+  static const String unavailableMessage =
+      'The AI assistant is currently unavailable. Please try again later.';
+  static const String emptyResponseMessage =
+      'No response was received from the AI. Please try again.';
 
   /// Only model enabled for the Foodni Groq project.
   static const String chatModel = 'qwen/qwen3-32b';
@@ -39,11 +45,7 @@ class AssistantChatService {
 
   Future<String> sendMessage(String userText) async {
     if (!hasApiKey) {
-      throw Exception(
-        'Groq API key is not set. Run the app with:\n'
-        'flutter run --dart-define=GROQ_API_KEY=gsk_your_key_here\n'
-        'Get a free key at https://console.groq.com',
-      );
+      throw const AssistantChatException.unavailable();
     }
 
     _history.add({'role': 'user', 'content': userText});
@@ -82,38 +84,35 @@ class AssistantChatService {
         'Content-Type': 'application/json',
       },
       body: jsonEncode(_buildRequestBody(messages)),
-    );
+    ).timeout(_requestTimeout);
 
-    if (response.statusCode == 429) {
-      throw Exception('Rate limit exceeded. Please wait a moment and try again.');
-    }
-
-    if (response.statusCode == 403) {
-      throw Exception(
-        'Groq model access blocked for this project. '
-        'Enable $chatModel at console.groq.com/settings/project/limits',
-      );
+    if (response.statusCode == 401 ||
+        response.statusCode == 403 ||
+        response.statusCode == 408 ||
+        response.statusCode == 429 ||
+        response.statusCode >= 500) {
+      throw const AssistantChatException.unavailable();
     }
 
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw Exception('Groq API error ${response.statusCode}: ${response.body}');
+      throw const AssistantChatException.unavailable();
     }
 
     final data = jsonDecode(response.body) as Map<String, dynamic>;
     final choices = data['choices'] as List<dynamic>?;
     if (choices == null || choices.isEmpty) {
-      throw Exception('Groq returned no choices.');
+      throw const AssistantChatException.emptyResponse();
     }
 
     final message = choices.first['message'] as Map<String, dynamic>?;
     final content = message?['content'] as String?;
     if (content == null || content.trim().isEmpty) {
-      throw Exception('Groq returned an empty response.');
+      throw const AssistantChatException.emptyResponse();
     }
 
     final cleaned = stripThinking(content);
     if (cleaned.isEmpty) {
-      throw Exception('Groq returned only internal reasoning with no answer.');
+      throw const AssistantChatException.emptyResponse();
     }
 
     return cleaned;
@@ -178,4 +177,19 @@ class AssistantChatService {
 
   static String _xmlTag(String name, {bool close = false}) =>
       close ? '</$name>' : '<$name>';
+}
+
+class AssistantChatException implements Exception {
+  const AssistantChatException._(this.userMessage);
+
+  const AssistantChatException.unavailable()
+    : this._(AssistantChatService.unavailableMessage);
+
+  const AssistantChatException.emptyResponse()
+    : this._(AssistantChatService.emptyResponseMessage);
+
+  final String userMessage;
+
+  @override
+  String toString() => userMessage;
 }

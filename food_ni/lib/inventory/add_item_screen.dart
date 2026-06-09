@@ -1,12 +1,12 @@
 import 'dart:io';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:intl/intl.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 
 import '../camera/local_image_service.dart';
 import '../notifications/expiry_notification_service.dart';
@@ -23,13 +23,16 @@ class _AddItemScreenState extends State<AddItemScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _quantityController = TextEditingController(text: '1');
+  final ImagePicker _picker = ImagePicker();
 
   String? _selectedCategory;
   String _selectedUnit = 'Unit';
+  DateTime? _purchaseDate;
   DateTime? _selectedDate;
+  DateTime? _suggestedDate;
+  bool _isExpiryDateOverridden = false;
   bool _isLoading = false;
   XFile? _selectedImage;
-  final ImagePicker _picker = ImagePicker();
 
   final List<String> _categories = [
     'Produce',
@@ -51,6 +54,12 @@ class _AddItemScreenState extends State<AddItemScreen> {
     'oz',
     'Pack',
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    _purchaseDate = FoodStatusUtils.malaysiaTodayDateOnly();
+  }
 
   @override
   void dispose() {
@@ -110,11 +119,54 @@ class _AddItemScreenState extends State<AddItemScreen> {
     );
   }
 
-  Future<void> _selectDate(BuildContext context) async {
+  Future<void> _selectPurchaseDate(BuildContext context) async {
     final today = FoodStatusUtils.malaysiaTodayDateOnly();
     final DateTime? picked = await showDatePicker(
       context: context,
-      initialDate: _selectedDate ?? today,
+      initialDate: _purchaseDate ?? today,
+      firstDate: DateTime(today.year - 1, today.month, today.day),
+      lastDate: today,
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: const ColorScheme.light(
+              primary: Color(0xFF052A1E),
+              onPrimary: Colors.white,
+              onSurface: Color(0xFF052A1E),
+            ),
+            textButtonTheme: TextButtonThemeData(
+              style: TextButton.styleFrom(
+                foregroundColor: const Color(0xFF34A853),
+              ),
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+    if (picked != null) {
+      setState(() {
+        _purchaseDate = picked;
+        _syncSuggestedExpiry();
+      });
+    }
+  }
+
+  Future<void> _selectExpiryDate(BuildContext context) async {
+    if (_selectedCategory == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Select a category first to calculate the expiry date'),
+        ),
+      );
+      return;
+    }
+
+    final today = FoodStatusUtils.malaysiaTodayDateOnly();
+    final DateTime initialDate = _selectedDate ?? _suggestedDate ?? today;
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: initialDate,
       firstDate: DateTime(today.year - 1, today.month, today.day),
       lastDate: DateTime(2101),
       builder: (context, child) {
@@ -138,15 +190,58 @@ class _AddItemScreenState extends State<AddItemScreen> {
     if (picked != null) {
       setState(() {
         _selectedDate = picked;
+        _isExpiryDateOverridden = !FoodStatusUtils.isSameDate(
+          picked,
+          _suggestedDate,
+        );
       });
     }
   }
 
+  void _syncSuggestedExpiry({bool resetOverride = false}) {
+    final suggestedDate = FoodStatusUtils.suggestedExpiryDate(
+      category: _selectedCategory,
+      purchaseDate: _purchaseDate,
+    );
+
+    _suggestedDate = suggestedDate;
+
+    if (suggestedDate == null) {
+      if (resetOverride || !_isExpiryDateOverridden) {
+        _selectedDate = null;
+        _isExpiryDateOverridden = false;
+      }
+      return;
+    }
+
+    if (resetOverride || !_isExpiryDateOverridden || _selectedDate == null) {
+      _selectedDate = suggestedDate;
+      _isExpiryDateOverridden = false;
+    }
+  }
+
+  void _applySuggestedExpiry() {
+    if (_suggestedDate == null) return;
+
+    setState(() {
+      _selectedDate = _suggestedDate;
+      _isExpiryDateOverridden = false;
+    });
+  }
+
   Future<void> _saveItem() async {
     if (!_formKey.currentState!.validate()) return;
+    if (_purchaseDate == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select a purchase date')),
+      );
+      return;
+    }
     if (_selectedDate == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select an expiry date')),
+        const SnackBar(
+          content: Text('Please select a category to calculate the expiry date'),
+        ),
       );
       return;
     }
@@ -169,18 +264,17 @@ class _AddItemScreenState extends State<AddItemScreen> {
             bytes,
           );
         } else {
-          final appDir = await getApplicationDocumentsDirectory();
-          final foodDir = Directory(p.join(appDir.path, 'food_images'));
-          if (!await foodDir.exists()) await foodDir.create(recursive: true);
-          final timestamp = DateTime.now().millisecondsSinceEpoch;
-          final destPath = p.join(foodDir.path, 'food_$timestamp.jpg');
-          await File(_selectedImage!.path).copy(destPath);
-          localImagePath = destPath;
-          thumbnailPath = destPath;
+          final savedImage = await LocalImageService().saveImage(File(_selectedImage!.path));
+          localImagePath = savedImage.imagePath;
+          thumbnailPath = savedImage.thumbnailPath;
         }
       }
 
       final formattedDate = FoodStatusUtils.formatExpiryDate(_selectedDate!);
+      final purchaseDate = FoodStatusUtils.formatExpiryDate(_purchaseDate!);
+      final suggestedExpiryDate = _suggestedDate == null
+          ? null
+          : FoodStatusUtils.formatExpiryDate(_suggestedDate!);
       final daysRemaining = FoodStatusUtils.daysRemaining(_selectedDate!);
       final freshnessStatus = FoodStatusUtils.statusForDays(daysRemaining);
       final quantityDisplay =
@@ -190,7 +284,10 @@ class _AddItemScreenState extends State<AddItemScreen> {
       await docRef.set({
         'userId': user.uid,
         'foodName': _nameController.text.trim(),
+        'purchaseDate': purchaseDate,
         'expiryDate': formattedDate,
+        'suggestedExpiryDate': suggestedExpiryDate,
+        'isExpiryDateOverridden': _isExpiryDateOverridden,
         'category': _selectedCategory ?? 'Uncategorized',
         'quantity': quantityDisplay,
         'storageSuggestion': 'See Storage Guide for details.',
@@ -314,35 +411,32 @@ class _AddItemScreenState extends State<AddItemScreen> {
                       ),
                     ),
                     const SizedBox(height: 24),
-
                     _buildTextField(
                       controller: _nameController,
                       label: 'Food Name',
                       icon: Icons.fastfood,
                       validator: (value) {
-                        if (value == null || value.isEmpty) {
+                        if (value == null || value.trim().isEmpty) {
                           return 'Please enter a food name';
                         }
                         return null;
                       },
                     ),
                     const SizedBox(height: 20),
-
-                    // Dropdown for Category matching your application field styling
                     _buildDropdownField(
                       label: 'Category',
                       icon: Icons.category,
                       value: _selectedCategory,
                       hint: 'Select Category',
                       items: _categories,
-                      onChanged: (val) =>
-                          setState(() => _selectedCategory = val),
+                      onChanged: (val) => setState(() {
+                        _selectedCategory = val;
+                        _syncSuggestedExpiry();
+                      }),
                       validator: (value) =>
                           value == null ? 'Please select a category' : null,
                     ),
                     const SizedBox(height: 20),
-
-                    // Side by Side Quantity configuration
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -355,7 +449,7 @@ class _AddItemScreenState extends State<AddItemScreen> {
                             hint: '1',
                             keyboardType: TextInputType.number,
                             validator: (value) {
-                              if (value == null || value.isEmpty) {
+                              if (value == null || value.trim().isEmpty) {
                                 return 'Required';
                               }
                               return null;
@@ -378,24 +472,23 @@ class _AddItemScreenState extends State<AddItemScreen> {
                       ],
                     ),
                     const SizedBox(height: 20),
-
                     GestureDetector(
-                      onTap: () => _selectDate(context),
+                      onTap: () => _selectPurchaseDate(context),
                       child: AbsorbPointer(
                         child: _buildTextField(
                           controller: TextEditingController(
-                            text: _selectedDate == null
+                            text: _purchaseDate == null
                                 ? ''
-                                : DateFormat(
-                                    'MMM dd, yyyy',
-                                  ).format(_selectedDate!),
+                                : FoodStatusUtils.formatExpiryDate(
+                                    _purchaseDate!,
+                                  ),
                           ),
-                          label: 'Expiry Date',
-                          icon: Icons.calendar_today,
+                          label: 'Purchase Date',
+                          icon: Icons.shopping_bag_outlined,
                           hint: 'Select Date',
                           validator: (value) {
-                            if (_selectedDate == null) {
-                              return 'Please select an expiry date';
+                            if (_purchaseDate == null) {
+                              return 'Please select a purchase date';
                             }
                             return null;
                           },
@@ -403,9 +496,32 @@ class _AddItemScreenState extends State<AddItemScreen> {
                       ),
                     ),
                     const SizedBox(height: 20),
-
+                    GestureDetector(
+                      onTap: () => _selectExpiryDate(context),
+                      child: AbsorbPointer(
+                        child: _buildTextField(
+                          controller: TextEditingController(
+                            text: _selectedDate == null
+                                ? ''
+                                : FoodStatusUtils.formatExpiryDate(
+                                    _selectedDate!,
+                                  ),
+                          ),
+                          label: 'Expiry Date',
+                          icon: Icons.calendar_today,
+                          hint: 'Calculated automatically',
+                          validator: (value) {
+                            if (_selectedDate == null) {
+                              return 'Select a category to calculate expiry';
+                            }
+                            return null;
+                          },
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    _buildExpiryMessage(),
                     const SizedBox(height: 32),
-
                     ElevatedButton(
                       onPressed: _saveItem,
                       style: ElevatedButton.styleFrom(
@@ -429,6 +545,49 @@ class _AddItemScreenState extends State<AddItemScreen> {
               ),
             ),
     );
+  }
+
+  Widget _buildExpiryMessage() {
+    final textTheme = Theme.of(context).textTheme;
+    final suggestedDateText = _suggestedDate == null
+        ? null
+        : FoodStatusUtils.formatExpiryDate(_suggestedDate!);
+
+    if (_selectedCategory == null) {
+      return Text(
+        'Select a category to auto-calculate the expiry date.',
+        style: textTheme.bodySmall?.copyWith(color: const Color(0xFF666666)),
+      );
+    }
+
+    if (_isExpiryDateOverridden && suggestedDateText != null) {
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Text(
+              'Suggested expiry is $suggestedDateText. You changed it manually.',
+              style: textTheme.bodySmall?.copyWith(
+                color: const Color(0xFF666666),
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: _applySuggestedExpiry,
+            child: const Text('Use Suggested'),
+          ),
+        ],
+      );
+    }
+
+    if (suggestedDateText != null) {
+      return Text(
+        'Expiry is auto-calculated from the selected category and purchase date. You can change it if needed.',
+        style: textTheme.bodySmall?.copyWith(color: const Color(0xFF666666)),
+      );
+    }
+
+    return const SizedBox.shrink();
   }
 
   Widget _buildTextField({

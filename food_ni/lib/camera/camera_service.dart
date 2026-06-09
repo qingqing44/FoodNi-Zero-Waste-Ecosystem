@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -17,11 +18,18 @@ Analyze the food image and return ONLY valid JSON.
 
 {
   "foodName": "",
+  "detectedItems": [
+    {
+      "name": "",
+      "confidence": 0
+    }
+  ],
   "description": "",
   "category": "",
   "freshnessScore": 0,
   "freshnessStatus": "",
   "estimatedDaysRemaining": 0,
+  "storageSuggestion": "",
   "caloriesPer100g": "",
   "basicRecipes": [
     {
@@ -49,8 +57,11 @@ Freshness Status:
 
 Rules:
 - Base assessment only on visible appearance.
-- If multiple foods are present, choose the primary food item.
+- If multiple foods are present, set "foodName" to the primary item and list
+  the visible food items in "detectedItems" with individual confidence scores.
+- "detectedItems" must include 1 to 5 food items that are visibly present.
 - "description" should be a short, user-friendly summary of the food.
+- "storageSuggestion" should be a short, specific storage method for this food.
 - "caloriesPer100g" should be a concise value such as "52 kcal".
 - "basicRecipes" must contain exactly 2 simple recipe objects using this food.
 - Each recipe object must have a short "title" and 2 to 3 concise "steps".
@@ -63,6 +74,8 @@ Rules:
 ///
 /// No Firebase Storage is used; images live in the device's app documents dir.
 class CameraService {
+  static const Duration _geminiTimeout = Duration(seconds: 25);
+
   final ImagePicker _picker = ImagePicker();
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final LocalImageService _localImageService = LocalImageService();
@@ -90,7 +103,15 @@ class CameraService {
     if (user == null) throw Exception('You must be logged in to scan items.');
 
     // 3. Read bytes once, then store them in a platform-appropriate way.
-    final imageBytes = await picked.readAsBytes();
+    Uint8List imageBytes;
+    try {
+      imageBytes = await picked.readAsBytes();
+    } catch (_) {
+      throw const FoodScanException.invalidImage();
+    }
+    if (imageBytes.isEmpty) {
+      throw const FoodScanException.invalidImage();
+    }
     final ({String imagePath, String thumbnailPath}) storedImage;
     if (kIsWeb) {
       storedImage = await _localImageService.saveWebImage(imageBytes);
@@ -126,6 +147,11 @@ class CameraService {
       'localImagePath': storedImage.imagePath,
       'thumbnailPath': storedImage.thumbnailPath,
       'foodName': foodName,
+      'detectedItems': _normaliseDetectedItems(
+        analysisResult['detectedItems'],
+        fallbackFoodName: foodName,
+        fallbackConfidence: confidence,
+      ),
       'description':
           analysisResult['description'] ??
           'No food description available.',
@@ -133,6 +159,9 @@ class CameraService {
       'freshnessScore': analysisResult['freshnessScore'] ?? 0,
       'freshnessStatus': freshnessStatus,
       'estimatedDaysRemaining': analysisResult['estimatedDaysRemaining'] ?? 0,
+      'storageSuggestion':
+          analysisResult['storageSuggestion'] ??
+          'Store according to the recommended conditions for this food.',
       'caloriesPer100g':
           analysisResult['caloriesPer100g'] ?? 'Not available',
       'basicRecipes': _normaliseRecipes(analysisResult['basicRecipes']),
@@ -169,23 +198,24 @@ class CameraService {
             InlineDataPart('image/jpeg', imageBytes),
             TextPart(_kGeminiPrompt),
           ]),
-        ]);
+        ]).timeout(_geminiTimeout);
         break; // Success
       } catch (e) {
         lastError = e.toString();
-        // If it's a server error (e.g. 500 high demand), we try the next model.
-        // If it's something else we might still want to try the next model just in case.
         continue;
       }
     }
 
     if (response == null) {
-      throw Exception('All Gemini models failed. Last error: $lastError');
+      if (_isLikelyInvalidImageError(lastError)) {
+        throw const FoodScanException.invalidImage();
+      }
+      throw const FoodScanException.unavailable();
     }
 
     final rawText = response.text;
     if (rawText == null || rawText.trim().isEmpty) {
-      throw Exception('Gemini returned an empty response.');
+      throw const FoodScanException.emptyResponse();
     }
 
     return _parseJson(rawText);
@@ -205,9 +235,39 @@ class CameraService {
       try {
         return jsonDecode(cleaned) as Map<String, dynamic>;
       } catch (e) {
-        throw Exception('Could not parse AI response as JSON: $e\nRaw: $cleaned');
+        throw const FoodScanException.unavailable();
       }
     }
+  }
+
+  List<Map<String, dynamic>> _normaliseDetectedItems(
+    dynamic rawItems, {
+    required String fallbackFoodName,
+    required int fallbackConfidence,
+  }) {
+    if (rawItems is List) {
+      final items = rawItems
+          .map((item) {
+            if (item is! Map) return null;
+            final name = item['name']?.toString().trim() ?? '';
+            if (name.isEmpty) return null;
+            return {
+              'name': name,
+              'confidence': _parsePercentage(item['confidence']) ?? 0,
+            };
+          })
+          .whereType<Map<String, dynamic>>()
+          .take(5)
+          .toList();
+      if (items.isNotEmpty) return items;
+    }
+
+    return [
+      {
+        'name': fallbackFoodName,
+        'confidence': fallbackConfidence,
+      },
+    ];
   }
 
   List<Map<String, dynamic>> _normaliseRecipes(dynamic rawRecipes) {
@@ -327,4 +387,33 @@ class CameraService {
 
     return null;
   }
+
+  bool _isLikelyInvalidImageError(String? error) {
+    final value = (error ?? '').toLowerCase();
+    return value.contains('unsupported') ||
+        value.contains('invalid image') ||
+        value.contains('corrupt') ||
+        value.contains('decode') ||
+        value.contains('format');
+  }
+}
+
+class FoodScanException implements Exception {
+  const FoodScanException._(this.userMessage);
+
+  const FoodScanException.unavailable()
+    : this._(
+        'Unable to identify food at the moment. Please check your internet connection and try again.',
+      );
+
+  const FoodScanException.emptyResponse()
+    : this._('No response was received from the AI. Please try again.');
+
+  const FoodScanException.invalidImage()
+    : this._('Unable to process image. Please upload a valid food image.');
+
+  final String userMessage;
+
+  @override
+  String toString() => userMessage;
 }

@@ -26,7 +26,8 @@ class _InventoryScreenState extends State<InventoryScreen> {
   static const _statusOptions = [
     'All',
     FoodStatusUtils.fresh,
-    FoodStatusUtils.expiring,
+    FoodStatusUtils.nearExpiry,
+    FoodStatusUtils.expiringSoon,
     FoodStatusUtils.expired,
   ];
 
