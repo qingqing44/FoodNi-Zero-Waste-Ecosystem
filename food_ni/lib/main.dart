@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'app.dart';
 import 'firebase_options.dart';
 import 'notifications/expiry_notification_service.dart';
+import 'services/recipes/recipe_seeder.dart';
 
 const clientId =
     '599901055825-u3im4t71dc6adlvguikbgufduf726bar.apps.googleusercontent.com';
@@ -16,6 +17,14 @@ void main() async {
     await ExpiryNotificationService.instance.initialize();
   } catch (_) {
     // Notification setup should not block the app from launching.
+  }
+
+  // Seed the Firestore recipes collection on first launch.
+  // Exits immediately if recipes already exist (idempotent).
+  try {
+    await RecipeSeeder.seedRecipesIfNeeded();
+  } catch (_) {
+    // Seeding failure must never prevent the app from starting.
   }
 
   runApp(const MyApp(clientId: clientId));

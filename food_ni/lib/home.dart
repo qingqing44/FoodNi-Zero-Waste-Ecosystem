@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
@@ -7,6 +8,9 @@ import 'camera/details_screen.dart';
 import 'inventory/inventory_screen.dart';
 import 'assistant/assistant_screen.dart';
 import 'inventory/add_item_screen.dart';
+import 'models/recipe.dart';
+import 'recipes/recipe_details_screen.dart';
+import 'services/recipes/recipe_service.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -19,6 +23,12 @@ class _HomeScreenState extends State<HomeScreen> {
   final _searchController = TextEditingController();
   String _searchQuery = '';
   String _selectedCategory = 'All Recipes';
+
+  // ── Recipe recommendation state ──────────────────────────────────────────
+  final _recipeService = RecipeService();
+  List<Recipe>? _recommendedRecipes;
+  bool _recipeLoading = false;
+  String? _recipeError;
 
   static const List<_Recipe> _recipes = [
     _Recipe(
@@ -94,10 +104,67 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   @override
+  void initState() {
+    super.initState();
+    _loadRecommendations();
+  }
+
+  @override
   void dispose() {
     _searchController.dispose();
     super.dispose();
   }
+
+  // ── Recipe recommendation loading ─────────────────────────────────────────
+
+  /// Fetches the current user's inventory from Firestore, extracts ingredient
+  /// names, and passes them to [RecipeService] to get ranked recommendations.
+  Future<void> _loadRecommendations() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    if (!mounted) return;
+    setState(() {
+      _recipeLoading = true;
+      _recipeError = null;
+    });
+
+    try {
+      // Fetch the user's food items from Firestore.
+      final snapshot = await FirebaseFirestore.instance
+          .collection('foodItems')
+          .where('userId', isEqualTo: user.uid)
+          .get();
+
+      // Extract and normalise ingredient names.
+      final ingredients = snapshot.docs
+          .map((doc) {
+            final data = doc.data();
+            final name = data['foodName'] as String?;
+            return name?.trim().toLowerCase() ?? '';
+          })
+          .where((name) => name.isNotEmpty)
+          .toList();
+
+      final recipes = await _recipeService.getRecommendedRecipes(ingredients);
+
+      if (mounted) {
+        setState(() {
+          _recommendedRecipes = recipes;
+          _recipeLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _recipeError = 'Could not load recommendations. Tap to retry.';
+          _recipeLoading = false;
+        });
+      }
+    }
+  }
+
+  // ── Social feed filter methods ────────────────────────────────────────────
 
   void _selectCategory(String category) {
     setState(() {
@@ -176,6 +243,8 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  // ── Build ─────────────────────────────────────────────────────────────────
+
   @override
   Widget build(BuildContext context) {
     final recipes = _filteredRecipes;
@@ -204,6 +273,11 @@ class _HomeScreenState extends State<HomeScreen> {
                     _buildCategoryChips(),
                     const SizedBox(height: 24),
 
+                    // ── Recommended For You ─────────────────────────────────
+                    _buildRecommendedSection(),
+                    const SizedBox(height: 24),
+
+                    // ── Social Feed ─────────────────────────────────────────
                     ..._buildRecipeFeed(recipes),
                     const SizedBox(height: 80), // Space for bottom nav
                   ],
@@ -216,6 +290,377 @@ class _HomeScreenState extends State<HomeScreen> {
       bottomNavigationBar: _buildBottomNav(context),
     );
   }
+
+  // ── Recommended For You section ───────────────────────────────────────────
+
+  Widget _buildRecommendedSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text(
+              'Recommended For You',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF052A1E),
+              ),
+            ),
+            // Retry / refresh button shown after loading completes or on error
+            if (_recipeError != null || _recommendedRecipes != null)
+              GestureDetector(
+                onTap: () {
+                  _recipeService.invalidateCache();
+                  _loadRecommendations();
+                },
+                child: const Icon(
+                  Icons.refresh,
+                  color: Color(0xFF34A853),
+                  size: 20,
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        const Text(
+          'Based on your current inventory',
+          style: TextStyle(color: Color(0xFF888888), fontSize: 12),
+        ),
+        const SizedBox(height: 14),
+
+        // ── State handling ────────────────────────────────────────────────
+        if (_recipeLoading)
+          _buildRecommendedLoading()
+        else if (_recipeError != null)
+          _buildRecommendedError()
+        else if (_recommendedRecipes == null || _recommendedRecipes!.isEmpty)
+          _buildRecommendedEmpty()
+        else
+          SizedBox(
+            height: 220,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: _recommendedRecipes!.length,
+              separatorBuilder: (_, _) => const SizedBox(width: 12),
+              itemBuilder: (context, index) {
+                return _buildRecommendedCard(
+                  context,
+                  _recommendedRecipes![index],
+                );
+              },
+            ),
+          ),
+      ],
+    );
+  }
+
+  /// A single horizontally-scrollable recipe recommendation card.
+  Widget _buildRecommendedCard(BuildContext context, Recipe recipe) {
+    final isFirebase = recipe.source == 'firebase';
+
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => RecipeDetailsScreen(recipe: recipe),
+          ),
+        );
+      },
+      child: Container(
+        width: 180,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.06),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // ── Cover image with badges ─────────────────────────────────
+            Stack(
+              children: [
+                ClipRRect(
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(20),
+                  ),
+                  child: recipe.imageUrl.isNotEmpty
+                      ? Image.network(
+                          recipe.imageUrl,
+                          height: 110,
+                          width: 180,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, _, _) =>
+                              _recipeImagePlaceholder(),
+                        )
+                      : _recipeImagePlaceholder(),
+                ),
+                // Match % badge (top-left)
+                if (recipe.matchPercentage > 0)
+                  Positioned(
+                    top: 8,
+                    left: 8,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 7,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF052A1E).withValues(alpha: 0.85),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        '${recipe.matchPercentage.toStringAsFixed(0)}% match',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 9,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                // Source badge (top-right)
+                Positioned(
+                  top: 8,
+                  right: 8,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 7,
+                      vertical: 3,
+                    ),
+                    decoration: BoxDecoration(
+                      color: isFirebase
+                          ? const Color(0xFF34A853).withValues(alpha: 0.9)
+                          : Colors.grey.shade600.withValues(alpha: 0.85),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      isFirebase ? 'FoodNi' : 'External',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 9,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+
+            // ── Card body ────────────────────────────────────────────────
+            Padding(
+              padding: const EdgeInsets.all(10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    recipe.title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF052A1E),
+                      height: 1.3,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.access_time,
+                        size: 11,
+                        color: Color(0xFF888888),
+                      ),
+                      const SizedBox(width: 3),
+                      Text(
+                        recipe.preparationTime > 0
+                            ? '${recipe.preparationTime} min'
+                            : '–',
+                        style: const TextStyle(
+                          fontSize: 10,
+                          color: Color(0xFF888888),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      const Icon(
+                        Icons.bolt,
+                        size: 11,
+                        color: Color(0xFF888888),
+                      ),
+                      const SizedBox(width: 2),
+                      Expanded(
+                        child: Text(
+                          recipe.difficulty,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 10,
+                            color: Color(0xFF888888),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Shimmer-style loading placeholder row (4 ghost cards).
+  Widget _buildRecommendedLoading() {
+    return SizedBox(
+      height: 220,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: 4,
+        separatorBuilder: (_, _) => const SizedBox(width: 12),
+        itemBuilder: (_, _) => Container(
+          width: 180,
+          decoration: BoxDecoration(
+            color: Colors.grey.shade200,
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Column(
+            children: [
+              ClipRRect(
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(20),
+                ),
+                child: Container(
+                  height: 110,
+                  width: 180,
+                  color: Colors.grey.shade300,
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(10),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      height: 12,
+                      width: 140,
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade300,
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Container(
+                      height: 10,
+                      width: 100,
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade300,
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+              const SizedBox(
+                height: 16,
+                width: 16,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Color(0xFF34A853),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Shown when the inventory is empty or no recipes matched.
+  Widget _buildRecommendedEmpty() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFE8F3EF),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: const Column(
+        children: [
+          Icon(Icons.kitchen_outlined, size: 36, color: Color(0xFF34A853)),
+          SizedBox(height: 8),
+          Text(
+            'No recommendations yet.',
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF052A1E),
+            ),
+          ),
+          SizedBox(height: 4),
+          Text(
+            'Add items to your inventory to get personalised recipe ideas.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Color(0xFF666666), fontSize: 12),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Shown when the recommendation fetch failed. Tapping retries.
+  Widget _buildRecommendedError() {
+    return GestureDetector(
+      onTap: () {
+        _recipeService.invalidateCache();
+        _loadRecommendations();
+      },
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+        decoration: BoxDecoration(
+          color: Colors.red.shade50,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.red.shade100),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.error_outline, color: Colors.red.shade400, size: 20),
+            const SizedBox(width: 8),
+            Flexible(
+              child: Text(
+                _recipeError ?? 'Something went wrong. Tap to retry.',
+                style: TextStyle(color: Colors.red.shade700, fontSize: 13),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Generic image placeholder for recipe cards without an image URL.
+  Widget _recipeImagePlaceholder() => Container(
+    height: 110,
+    width: 180,
+    color: const Color(0xFFD0E8D8),
+    child: const Icon(
+      Icons.restaurant,
+      color: Color(0xFF34A853),
+      size: 36,
+    ),
+  );
+
+  // ── Social feed ───────────────────────────────────────────────────────────
 
   List<Widget> _buildRecipeFeed(List<_Recipe> recipes) {
     if (recipes.isEmpty) {
