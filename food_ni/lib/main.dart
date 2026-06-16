@@ -1,5 +1,6 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 import 'app.dart';
 import 'firebase_options.dart';
@@ -11,6 +12,16 @@ const clientId =
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Load environment variables from .env before anything else.
+  // mergeWith: {} keeps existing process env vars on non-Flutter platforms.
+  try {
+    await dotenv.load(fileName: '.env');
+  } catch (_) {
+    // .env is optional — the app runs without a Spoonacular key,
+    // falling back to Firebase-only recommendations.
+  }
+
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
   try {
