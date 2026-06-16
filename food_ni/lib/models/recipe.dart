@@ -11,6 +11,8 @@ class Recipe {
     required this.difficulty,
     required this.source,
     this.matchPercentage = 0.0,
+    this.wasteReductionScore = 0.0,
+    this.expiringIngredientsUsed = const [],
   });
 
   /// Unique identifier (Firestore doc ID or external API ID).
@@ -40,6 +42,12 @@ class Recipe {
   /// Calculated by [RecipeService] after fetching; defaults to 0.
   final double matchPercentage;
 
+  /// Score (0-100) representing how well this recipe utilizes expiring ingredients.
+  final double wasteReductionScore;
+
+  /// List of inventory ingredients used in this recipe that have <= 7 days remaining.
+  final List<String> expiringIngredientsUsed;
+
   // ── Deserialization ────────────────────────────────────────────────────────
 
   factory Recipe.fromJson(Map<String, dynamic> json, {String id = ''}) {
@@ -53,6 +61,8 @@ class Recipe {
       difficulty: json['difficulty'] as String? ?? 'Unknown',
       source: json['source'] as String? ?? 'firebase',
       matchPercentage: (json['matchPercentage'] as num?)?.toDouble() ?? 0.0,
+      wasteReductionScore: (json['wasteReductionScore'] as num?)?.toDouble() ?? 0.0,
+      expiringIngredientsUsed: _parseStringList(json['expiringIngredientsUsed']),
     );
   }
 
@@ -68,12 +78,25 @@ class Recipe {
     'difficulty': difficulty,
     'source': source,
     'matchPercentage': matchPercentage,
+    'wasteReductionScore': wasteReductionScore,
+    'expiringIngredientsUsed': expiringIngredientsUsed,
   };
 
   // ── Helpers ────────────────────────────────────────────────────────────────
 
   /// Returns a copy of this recipe with [matchPercentage] overridden.
   Recipe withMatch(double percentage) => copyWith(matchPercentage: percentage);
+
+  /// Returns a copy of this recipe with expiry details updated.
+  Recipe withExpiryDetails({
+    required double wasteScore,
+    required List<String> expiringIngredients,
+  }) {
+    return copyWith(
+      wasteReductionScore: wasteScore,
+      expiringIngredientsUsed: expiringIngredients,
+    );
+  }
 
   Recipe copyWith({
     String? id,
@@ -85,6 +108,8 @@ class Recipe {
     String? difficulty,
     String? source,
     double? matchPercentage,
+    double? wasteReductionScore,
+    List<String>? expiringIngredientsUsed,
   }) {
     return Recipe(
       id: id ?? this.id,
@@ -96,6 +121,8 @@ class Recipe {
       difficulty: difficulty ?? this.difficulty,
       source: source ?? this.source,
       matchPercentage: matchPercentage ?? this.matchPercentage,
+      wasteReductionScore: wasteReductionScore ?? this.wasteReductionScore,
+      expiringIngredientsUsed: expiringIngredientsUsed ?? this.expiringIngredientsUsed,
     );
   }
 

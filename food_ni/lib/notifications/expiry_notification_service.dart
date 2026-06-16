@@ -1,9 +1,14 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_timezone/flutter_timezone.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timezone/timezone.dart' as tz;
 
 import '../inventory/food_status_utils.dart';
+import '../models/food_item.dart';
+import '../services/recipes/recipe_service.dart';
 
 class ExpiryNotificationService {
   ExpiryNotificationService._();
@@ -150,5 +155,90 @@ class ExpiryNotificationService {
       return oneDayBeforeAtNine;
     }
     return null;
+  }
+
+  /// Checks the inventory for items expiring in <= 3 days.
+  /// If found, fetches recommended recipes and sends a single local
+  /// notification. Only triggers once per day.
+  Future<void> checkAndSendDailyExpiryNotifications() async {
+    try {
+      if (kIsWeb) return;
+      await initialize();
+
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return;
+
+      final prefs = await SharedPreferences.getInstance();
+      final todayStr = FoodStatusUtils.malaysiaTodayDateOnly().toIso8601String();
+      final lastChecked = prefs.getString('last_expiry_notification_date');
+
+      if (lastChecked == todayStr) {
+        return; // Already checked today
+      }
+
+      // Fetch user's inventory
+      final snapshot = await FirebaseFirestore.instance
+          .collection('foodItems')
+          .where('userId', isEqualTo: user.uid)
+          .get();
+
+      final items = snapshot.docs
+          .map((doc) => FoodItem.fromFirestore(doc.data(), doc.id))
+          .toList();
+
+      // Find items expiring in <= 3 days
+      final expiringItems = <FoodItem>[];
+      for (final item in items) {
+        int? daysRemaining;
+        if (item.expiryDate != null) {
+          daysRemaining = FoodStatusUtils.daysRemaining(item.expiryDate!);
+        } else {
+          daysRemaining = item.estimatedDaysRemaining;
+        }
+
+        if (daysRemaining != null && daysRemaining >= 0 && daysRemaining <= 3) {
+          expiringItems.add(item);
+        }
+      }
+
+      if (expiringItems.isEmpty) {
+        await prefs.setString('last_expiry_notification_date', todayStr);
+        return;
+      }
+
+      // Fetch recipes
+      final recipeService = RecipeService();
+      final recipes = await recipeService.getRecommendedRecipes(items);
+
+      final topRecipes = recipes
+          .where((r) => r.expiringIngredientsUsed.isNotEmpty)
+          .take(3)
+          .toList();
+
+      if (topRecipes.isNotEmpty) {
+        final itemNames = expiringItems.map((i) => i.name).take(2).join(' and ');
+        final recipeNames = topRecipes.map((r) => '• ${r.title}').join('\n');
+
+        await _plugin.show(
+          'daily_expiry'.hashCode,
+          'Your $itemNames expires soon!',
+          'Try:\n$recipeNames',
+          const NotificationDetails(
+            android: AndroidNotificationDetails(
+              _channelId,
+              _channelName,
+              channelDescription: _channelDescription,
+              importance: Importance.high,
+              priority: Priority.high,
+              styleInformation: BigTextStyleInformation(''),
+            ),
+          ),
+        );
+      }
+
+      await prefs.setString('last_expiry_notification_date', todayStr);
+    } catch (e) {
+      debugPrint('Daily expiry notification failed: $e');
+    }
   }
 }

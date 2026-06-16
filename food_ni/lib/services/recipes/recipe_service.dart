@@ -1,4 +1,7 @@
+import 'package:flutter/foundation.dart';
 import '../../models/recipe.dart';
+import '../../models/food_item.dart';
+import 'expiry_priority_service.dart';
 import 'firebase_recipe_service.dart';
 import 'external_recipe_service.dart';
 
@@ -43,21 +46,24 @@ class RecipeService {
 
   // ── Public API ─────────────────────────────────────────────────────────────
 
-  /// Returns up to [_maxResults] recipes ranked by ingredient match percentage.
+  /// Returns up to [_maxResults] recipes ranked by ingredient match percentage
+  /// and waste reduction priority.
   ///
-  /// [inventoryIngredients] — lowercase, trimmed ingredient names extracted
-  /// from the current user's Firestore food inventory.
+  /// [inventory] — the current user's full food inventory.
   Future<List<Recipe>> getRecommendedRecipes(
-    List<String> inventoryIngredients,
+    List<FoodItem> inventory,
   ) async {
     // Return cached results if available.
     if (_cache != null) return _cache!;
 
-    if (inventoryIngredients.isEmpty) return [];
+    if (inventory.isEmpty) return [];
+
+    final inventoryIngredients =
+        inventory.map((i) => i.name).where((name) => name.isNotEmpty).toList();
 
     // ── Step 1 & 2: Fetch Firebase recipes and score them ──────────────────
     final firebaseRaw = await _firebase.fetchFirebaseRecipes();
-    final firebaseScored = _scoreAndSort(firebaseRaw, inventoryIngredients);
+    final firebaseScored = _scoreAndSort(firebaseRaw, inventory);
 
     // Count how many Firebase recipes meet our "strong match" threshold.
     final strongFirebaseCount = firebaseScored
@@ -72,16 +78,23 @@ class RecipeService {
       final externalRaw = await _external.fetchRecipesByIngredients(
         inventoryIngredients,
       );
-      externalScored = _scoreAndSort(externalRaw, inventoryIngredients);
+      externalScored = _scoreAndSort(externalRaw, inventory);
     }
 
     // ── Step 5: Merge ──────────────────────────────────────────────────────
     final merged = [...firebaseScored, ...externalScored];
 
-    // ── Step 6: Sort — highest match first; Firebase before external on tie ─
+    // ── Step 6: Sort — highest final score first ───────────────────────────
     merged.sort((a, b) {
-      final matchComp = b.matchPercentage.compareTo(a.matchPercentage);
-      if (matchComp != 0) return matchComp;
+      final aFinal = (a.matchPercentage * 0.7) + (a.wasteReductionScore * 0.3);
+      final bFinal = (b.matchPercentage * 0.7) + (b.wasteReductionScore * 0.3);
+
+      final finalComp = bFinal.compareTo(aFinal);
+      if (finalComp != 0) return finalComp;
+
+      final wasteComp = b.wasteReductionScore.compareTo(a.wasteReductionScore);
+      if (wasteComp != 0) return wasteComp;
+
       // Firebase recipes have priority on equal scores.
       if (a.source == 'firebase' && b.source != 'firebase') return -1;
       if (b.source == 'firebase' && a.source != 'firebase') return 1;
@@ -126,19 +139,33 @@ class RecipeService {
 
   // ── Private helpers ────────────────────────────────────────────────────────
 
-  /// Attaches a match percentage to each recipe and sorts descending.
+  /// Attaches a match percentage and waste score to each recipe and sorts descending.
   List<Recipe> _scoreAndSort(
     List<Recipe> recipes,
-    List<String> inventory,
+    List<FoodItem> inventory,
   ) {
-    return recipes
-        .map(
-          (r) => r.withMatch(
-            calculateMatchPercentage(inventory, r.ingredients),
-          ),
-        )
-        .toList()
-      ..sort((a, b) => b.matchPercentage.compareTo(a.matchPercentage));
+    final inventoryIngredients = inventory.map((i) => i.name).toList();
+
+    final scored = recipes.map((r) {
+      final match = calculateMatchPercentage(inventoryIngredients, r.ingredients);
+      final waste = ExpiryPriorityService.calculateWasteReductionScore(r, inventory);
+      final expiringUsed = ExpiryPriorityService.getExpiringIngredientsUsed(r, inventory);
+
+      debugPrint('[RecipeRanking] ${r.title} - Match: $match%, Waste: $waste');
+
+      return r.withMatch(match).withExpiryDetails(
+        wasteScore: waste,
+        expiringIngredients: expiringUsed,
+      );
+    }).toList();
+
+    scored.sort((a, b) {
+      final aFinal = (a.matchPercentage * 0.7) + (a.wasteReductionScore * 0.3);
+      final bFinal = (b.matchPercentage * 0.7) + (b.wasteReductionScore * 0.3);
+      return bFinal.compareTo(aFinal);
+    });
+
+    return scored;
   }
 
   /// Normalises a string for comparison: lowercase + collapsed whitespace.

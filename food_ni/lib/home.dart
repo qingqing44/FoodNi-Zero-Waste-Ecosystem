@@ -9,8 +9,10 @@ import 'inventory/inventory_screen.dart';
 import 'assistant/assistant_screen.dart';
 import 'inventory/add_item_screen.dart';
 import 'models/recipe.dart';
+import 'models/food_item.dart';
 import 'recipes/recipe_details_screen.dart';
 import 'services/recipes/recipe_service.dart';
+import 'notifications/expiry_notification_service.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -137,16 +139,11 @@ class _HomeScreenState extends State<HomeScreen> {
           .get();
 
       // Extract and normalise ingredient names.
-      final ingredients = snapshot.docs
-          .map((doc) {
-            final data = doc.data();
-            final name = data['foodName'] as String?;
-            return name?.trim().toLowerCase() ?? '';
-          })
-          .where((name) => name.isNotEmpty)
+      final items = snapshot.docs
+          .map((doc) => FoodItem.fromFirestore(doc.data(), doc.id))
           .toList();
 
-      final recipes = await _recipeService.getRecommendedRecipes(ingredients);
+      final recipes = await _recipeService.getRecommendedRecipes(items);
 
       if (mounted) {
         setState(() {
@@ -162,6 +159,10 @@ class _HomeScreenState extends State<HomeScreen> {
         });
       }
     }
+
+    // After loading recommendations, fire off the daily check in the background.
+    Future.microtask(() =>
+        ExpiryNotificationService.instance.checkAndSendDailyExpiryNotifications());
   }
 
   // ── Social feed filter methods ────────────────────────────────────────────
@@ -273,7 +274,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     _buildCategoryChips(),
                     const SizedBox(height: 24),
 
-                    // ── Recommended For You ─────────────────────────────────
+                    // ── Use Soon ────────────────────────────────────────────
                     _buildRecommendedSection(),
                     const SizedBox(height: 24),
 
@@ -291,7 +292,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // ── Recommended For You section ───────────────────────────────────────────
+  // ── Use Soon section ───────────────────────────────────────────
 
   Widget _buildRecommendedSection() {
     return Column(
@@ -301,7 +302,7 @@ class _HomeScreenState extends State<HomeScreen> {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             const Text(
-              'Recommended For You',
+              'Use Soon',
               style: TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.bold,
@@ -325,7 +326,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         const SizedBox(height: 4),
         const Text(
-          'Based on your current inventory',
+          'Recipes to help you reduce food waste',
           style: TextStyle(color: Color(0xFF888888), fontSize: 12),
         ),
         const SizedBox(height: 14),
@@ -339,7 +340,7 @@ class _HomeScreenState extends State<HomeScreen> {
           _buildRecommendedEmpty()
         else
           SizedBox(
-            height: 220,
+            height: 250,
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               itemCount: _recommendedRecipes!.length,
@@ -509,6 +510,36 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ],
                   ),
+                  const SizedBox(height: 6),
+                  if (recipe.expiringIngredientsUsed.isNotEmpty) ...[
+                    const Text(
+                      '🔥 Use Soon',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFFE53935),
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Uses: ${recipe.expiringIngredientsUsed.join(' • ')}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 9,
+                        color: Color(0xFF888888),
+                      ),
+                    ),
+                  ] else ...[
+                    const Text(
+                      '✓ Pantry Friendly',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF34A853),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
