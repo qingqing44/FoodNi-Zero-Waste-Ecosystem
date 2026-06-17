@@ -4,6 +4,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:path/path.dart' as p;
 
 import '../inventory/food_status_utils.dart';
 import '../notifications/expiry_notification_service.dart';
@@ -337,33 +339,72 @@ class _FoodDetailsScreenState extends State<FoodDetailsScreen> {
   // ---------------------------------------------------------------------------
 
   Widget _buildFoodImage(String? localImagePath) {
-    Widget imageWidget;
-
     if (_isNetworkLikePath(localImagePath)) {
-      imageWidget = Image.network(
-        localImagePath!,
-        fit: BoxFit.cover,
-        width: double.infinity,
-        height: 250,
-        errorBuilder: (_, _, _) => _placeholderImage(),
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: Image.network(
+          localImagePath!,
+          fit: BoxFit.cover,
+          width: double.infinity,
+          height: 250,
+          errorBuilder: (_, _, _) => _placeholderImage(),
+        ),
       );
-    } else if (localImagePath != null &&
-        !kIsWeb &&
-        File(localImagePath).existsSync()) {
-      imageWidget = Image.file(
-        File(localImagePath),
-        fit: BoxFit.cover,
-        width: double.infinity,
-        height: 250,
-        errorBuilder: (_, _, _) => _placeholderImage(),
-      );
-    } else {
-      imageWidget = _placeholderImage();
     }
 
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(20),
-      child: imageWidget,
+    if (localImagePath == null || kIsWeb) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: _placeholderImage(),
+      );
+    }
+
+    // Try absolute path first
+    final file = File(localImagePath);
+    if (file.existsSync()) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: Image.file(
+          file,
+          fit: BoxFit.cover,
+          width: double.infinity,
+          height: 250,
+          errorBuilder: (_, _, _) => _placeholderImage(),
+        ),
+      );
+    }
+
+    // Resolve relative path relative to App Documents Directory
+    return FutureBuilder<Directory>(
+      future: getApplicationDocumentsDirectory(),
+      builder: (context, snapshot) {
+        if (snapshot.hasData) {
+          final appDir = snapshot.data!;
+          String? filename;
+          if (localImagePath.contains('food_images')) {
+            filename = localImagePath.substring(localImagePath.indexOf('food_images'));
+          } else {
+            filename = p.join('food_images', p.basename(localImagePath));
+          }
+          final resolvedFile = File(p.join(appDir.path, filename));
+          if (resolvedFile.existsSync()) {
+            return ClipRRect(
+              borderRadius: BorderRadius.circular(20),
+              child: Image.file(
+                resolvedFile,
+                fit: BoxFit.cover,
+                width: double.infinity,
+                height: 250,
+                errorBuilder: (_, _, _) => _placeholderImage(),
+              ),
+            );
+          }
+        }
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(20),
+          child: _placeholderImage(),
+        );
+      },
     );
   }
 

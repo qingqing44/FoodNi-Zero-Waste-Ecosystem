@@ -157,26 +157,35 @@ class RecipeDetailsScreen extends StatelessWidget {
         style: TextStyle(color: Colors.grey),
       );
     }
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
       children: recipe.ingredients.map((ing) {
-        return Padding(
-          padding: const EdgeInsets.symmetric(vertical: 4),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Padding(
-                padding: EdgeInsets.only(top: 6),
-                child: CircleAvatar(
-                  radius: 3,
-                  backgroundColor: _accentGreen,
-                ),
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: const Color(0xFFE2E8F0)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.02),
+                blurRadius: 4,
+                offset: const Offset(0, 2),
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  _capitalize(ing),
-                  style: const TextStyle(fontSize: 14, color: Color(0xFF333333)),
+            ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.check_box_outlined, size: 16, color: _accentGreen),
+              const SizedBox(width: 8),
+              Text(
+                _capitalize(ing),
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: _darkGreen,
                 ),
               ),
             ],
@@ -200,38 +209,70 @@ class RecipeDetailsScreen extends StatelessWidget {
       children: recipe.instructions.asMap().entries.map((entry) {
         final stepNumber = entry.key + 1;
         final step = entry.value;
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 16),
+        final isLast = stepNumber == recipe.instructions.length;
+
+        return IntrinsicHeight(
           child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Step number badge
-              Container(
-                width: 28,
-                height: 28,
-                decoration: const BoxDecoration(
-                  color: _darkGreen,
-                  shape: BoxShape.circle,
-                ),
-                child: Center(
-                  child: Text(
-                    '$stepNumber',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
+              // Left timeline indicator
+              Column(
+                children: [
+                  Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE8F3EF),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: _accentGreen, width: 2),
+                    ),
+                    child: Center(
+                      child: Text(
+                        '$stepNumber',
+                        style: const TextStyle(
+                          color: _darkGreen,
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
                     ),
                   ),
-                ),
+                  if (!isLast)
+                    Expanded(
+                      child: Container(
+                        width: 2,
+                        color: const Color(0xFFE2E8F0),
+                      ),
+                    ),
+                ],
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 16),
+              // Right content card
               Expanded(
-                child: Text(
-                  step,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    color: Color(0xFF333333),
-                    height: 1.5,
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: 20),
+                  child: Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: const Color(0xFFF1F5F9)),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.03),
+                          blurRadius: 6,
+                          offset: const Offset(0, 3),
+                        ),
+                      ],
+                    ),
+                    child: Text(
+                      step,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        color: Color(0xFF334155),
+                        height: 1.5,
+                      ),
+                    ),
                   ),
                 ),
               ),

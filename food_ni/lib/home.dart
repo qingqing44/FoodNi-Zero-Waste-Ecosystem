@@ -787,6 +787,10 @@ class _HomeScreenState extends State<HomeScreen> {
           hintText: 'Ingredients, dish types, or flavors...',
           hintStyle: const TextStyle(color: Colors.grey, fontSize: 14),
           border: InputBorder.none,
+          enabledBorder: InputBorder.none,
+          focusedBorder: InputBorder.none,
+          disabledBorder: InputBorder.none,
+          filled: false,
           suffixIcon: _searchQuery.isEmpty
               ? null
               : IconButton(

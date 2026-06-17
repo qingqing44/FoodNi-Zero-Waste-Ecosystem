@@ -118,6 +118,57 @@ class _AssistantScreenState extends State<AssistantScreen> {
     }
   }
 
+  Future<void> _resetConversation() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text(
+          'Reset Chat',
+          style: TextStyle(
+            color: Color(0xFF052A1E),
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        content: const Text(
+          'Are you sure you want to clear your chat history and start a new session?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text(
+              'Reset',
+              style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    setState(() {
+      _isInitializing = true;
+    });
+
+    if (_userId != null) {
+      try {
+        await _historyService.clearHistory(_userId!);
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Could not clear chat history: $e')),
+          );
+        }
+      }
+    }
+
+    await _initializeChat(refreshPantryOnly: false);
+  }
+
   List<Map<String, String>> _toGroqHistory(List<ChatMessage> messages) {
     return messages
         .map(
@@ -316,10 +367,8 @@ $inventoryContext
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
-            tooltip: 'Refresh pantry data',
-            onPressed: _isInitializing
-                ? null
-                : () => _initializeChat(refreshPantryOnly: true),
+            tooltip: 'Reset chat history',
+            onPressed: _isInitializing ? null : _resetConversation,
           ),
         ],
       ),
@@ -355,7 +404,7 @@ $inventoryContext
                       padding: EdgeInsets.symmetric(vertical: 8.0),
                       child: CircularProgressIndicator(color: Color(0xFF34A853)),
                     ),
-                  if (_messages.length <= 1)
+                  if (_messages.length <= 1 && MediaQuery.of(context).viewInsets.bottom == 0)
                     Padding(
                       padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                       child: _buildSuggestedQuestions(),

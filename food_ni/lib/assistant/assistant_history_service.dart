@@ -62,4 +62,17 @@ class AssistantHistoryService {
       'createdAt': FieldValue.serverTimestamp(),
     });
   }
+
+  Future<void> clearHistory(String userId) async {
+    final snapshot = await _firestore
+        .collection(collectionName)
+        .where('userId', isEqualTo: userId)
+        .get();
+
+    final batch = _firestore.batch();
+    for (final doc in snapshot.docs) {
+      batch.delete(doc.reference);
+    }
+    await batch.commit();
+  }
 }
