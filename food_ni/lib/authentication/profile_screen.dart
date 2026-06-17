@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:typed_data';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:food_ni/authentication/login_screen.dart' show LoginScreen;
@@ -8,11 +9,13 @@ import 'package:image_picker/image_picker.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../assistant/assistant_screen.dart';
 import '../inventory/inventory_screen.dart';
 import '../camera/camera_service.dart';
 import '../camera/details_screen.dart';
+import 'settings_pages.dart';
 
 class MyProfileScreen extends StatefulWidget {
   const MyProfileScreen({super.key});
@@ -22,7 +25,9 @@ class MyProfileScreen extends StatefulWidget {
 }
 
 class _MyProfileScreenState extends State<MyProfileScreen> {
-  final User? user = FirebaseAuth.instance.currentUser;
+  // Always read the freshest user from Firebase Auth
+  User? get user => FirebaseAuth.instance.currentUser;
+
   final _nameController = TextEditingController();
   bool _isSaving = false;
   bool _isEditing = false;
@@ -36,7 +41,7 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
   
   final ImagePicker _picker = ImagePicker();
 
-    bool _dietaryRestrictions = true;
+  bool _dietaryRestrictions = true;
   bool _notifications = true;
   bool _ecoMode = false;
 
@@ -49,11 +54,36 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
     'https://cdn-icons-png.flaticon.com/512/4140/4140045.png',
   ];
 
+  static const String _localAvatarKey = 'local_avatar_path';
+
   @override
   void initState() {
     super.initState();
     _nameController.text = user?.displayName ?? '';
     _currentAvatarUrl = user?.photoURL;
+    _loadLocalAvatar();
+  }
+
+  /// Load the locally saved avatar path from SharedPreferences.
+  /// This overrides the Firebase photoURL when a local file is stored.
+  Future<void> _loadLocalAvatar() async {
+    final uid = user?.uid;
+    if (uid == null) return;
+    final prefs = await SharedPreferences.getInstance();
+    final localPath = prefs.getString('${_localAvatarKey}_$uid');
+    if (localPath != null && File(localPath).existsSync()) {
+      if (mounted) {
+        setState(() => _currentAvatarUrl = localPath);
+      }
+    }
+  }
+
+  /// Persist the local avatar path to SharedPreferences.
+  Future<void> _saveLocalAvatar(String localPath) async {
+    final uid = user?.uid;
+    if (uid == null) return;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('${_localAvatarKey}_$uid', localPath);
   }
 
   void _startEditing() {
@@ -94,33 +124,49 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
           final destPath = p.join(profileDir.path, '${user!.uid}.jpg');
           await File(_tempXFile!.path).copy(destPath);
           finalPhotoUrl = destPath;
+          // Persist locally so other screens can pick it up
+          await _saveLocalAvatar(destPath);
         }
+      } else if (_tempAvatarUrl != null &&
+          !_tempAvatarUrl!.startsWith('http') &&
+          !_tempAvatarUrl!.startsWith('data:') &&
+          !kIsWeb) {
+        // The user selected an existing local path avatar
+        await _saveLocalAvatar(_tempAvatarUrl!);
       }
 
       // Update Firebase Auth Profile
-      if (_nameController.text.trim() != user?.displayName) {
-        await user?.updateDisplayName(_nameController.text.trim());
-      }
-      
-      if (finalPhotoUrl != _currentAvatarUrl) {
-        await user?.updatePhotoURL(finalPhotoUrl);
-        _currentAvatarUrl = finalPhotoUrl;
+      final currentUser = user;
+      if (_nameController.text.trim() != currentUser?.displayName) {
+        await currentUser?.updateDisplayName(_nameController.text.trim());
       }
 
-      await user?.reload();
+      // Only push URL-like paths to Firebase photoURL (Firebase rejects local paths)
+      if (finalPhotoUrl != null &&
+          (finalPhotoUrl.startsWith('http') || finalPhotoUrl.startsWith('data:'))) {
+        if (finalPhotoUrl != _currentAvatarUrl) {
+          await currentUser?.updatePhotoURL(finalPhotoUrl);
+        }
+      }
+
+      await currentUser?.reload();
       if (mounted) {
         setState(() {
+          _currentAvatarUrl = finalPhotoUrl;
           _isEditing = false;
           _tempXFile = null;
+          _tempAvatarUrl = null;
         });
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Profile updated successfully!')),
         );
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to update profile: $e')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to update profile: $e')),
+        );
+      }
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
@@ -153,7 +199,6 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          const Icon(Icons.menu, color: Color(0xFF052A1E)),
           const Text(
             'FoodNi',
             style: TextStyle(
@@ -284,57 +329,46 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
         const SizedBox(height: 32),
 
         // Stats Row
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(
-            children: [
-              _buildStatCard(Icons.inventory_2, '428', 'Total Items Saved', const Color(0xFFE8F3EF), const Color(0xFF052A1E)),
-              const SizedBox(width: 12),
-              _buildStatCard(Icons.cloud_done, '12.4 kg', 'CO2 Reduced', const Color(0xFF052A1E), Colors.white),
-              const SizedBox(width: 12),
-              _buildStatCard(Icons.delete_sweep, '85%', 'Waste Prevented', const Color(0xFFF9F3EB), const Color(0xFF8B4513)),
-            ],
-          ),
-        ),
-        const SizedBox(height: 32),
+        StreamBuilder<QuerySnapshot>(
+          stream: FirebaseFirestore.instance
+              .collection('foodItems')
+              .where('userId', isEqualTo: user?.uid)
+              .snapshots(),
+          builder: (context, snapshot) {
+            final count = snapshot.data?.docs.length ?? 0;
+            final co2Saved = count * 2.5;
 
-        // Your Household
-        _buildSectionHeader('Your Household'),
-        const SizedBox(height: 16),
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: const Color(0xFFF0F0F0)),
-          ),
-          child: Column(
-            children: [
-              Row(
+            return SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
                 children: [
-                  _buildUserAvatarStack(),
-                  const Spacer(),
-                  TextButton.icon(
-                    onPressed: () {},
-                    icon: const Icon(Icons.add_circle_outline, size: 20, color: Color(0xFF34A853)),
-                    label: const Text('Invite', style: TextStyle(color: Color(0xFF34A853), fontWeight: FontWeight.bold)),
+                  _buildStatCard(
+                    Icons.inventory_2,
+                    '$count',
+                    'Total Items Saved',
+                    const Color(0xFFE8F3EF),
+                    const Color(0xFF052A1E),
+                  ),
+                  const SizedBox(width: 12),
+                  _buildStatCard(
+                    Icons.cloud_done,
+                    '${co2Saved.toStringAsFixed(1)} kg',
+                    'CO2 Reduced',
+                    const Color(0xFF052A1E),
+                    Colors.white,
+                  ),
+                  const SizedBox(width: 12),
+                  _buildStatCard(
+                    Icons.delete_sweep,
+                    count > 0 ? '90%' : '0%',
+                    'Waste Prevented',
+                    const Color(0xFFF9F3EB),
+                    const Color(0xFF8B4513),
                   ),
                 ],
               ),
-              const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF9F8F4),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Text(
-                  'Household Sharing: Currently sharing Inventory & Shopping Lists with "Rivers Residence".',
-                  style: TextStyle(fontSize: 12, color: Color(0xFF666666), height: 1.5),
-                ),
-              ),
-            ],
-          ),
+            );
+          },
         ),
         const SizedBox(height: 32),
 
@@ -349,11 +383,7 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
           ),
           child: Column(
             children: [
-              _buildPreferenceTile(Icons.restaurant, 'Dietary Restrictions', _dietaryRestrictions, (v) => setState(() => _dietaryRestrictions = v)),
-              const Divider(height: 1),
               _buildPreferenceTile(Icons.notifications, 'Notifications', _notifications, (v) => setState(() => _notifications = v)),
-              const Divider(height: 1),
-              _buildPreferenceTile(Icons.eco, 'Eco Mode Tips', _ecoMode, (v) => setState(() => _ecoMode = v)),
             ],
           ),
         ),
@@ -368,11 +398,35 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
           ),
           child: Column(
             children: [
-              _buildMenuItem(Icons.manage_accounts, 'Account Settings', 'Privacy, Security, and Personal details'),
+              _buildMenuItem(
+                Icons.manage_accounts,
+                'Account Settings',
+                'Privacy, Security, and Personal details',
+                () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const AccountSettingsScreen()),
+                ),
+              ),
               const Divider(height: 1),
-              _buildMenuItem(Icons.assessment, 'Sustainability Report', 'Detailed breakdown of your kitchen\'s impact'),
+              _buildMenuItem(
+                Icons.assessment,
+                'Sustainability Report',
+                'Detailed breakdown of your kitchen\'s impact',
+                () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const SustainabilityReportScreen()),
+                ),
+              ),
               const Divider(height: 1),
-              _buildMenuItem(Icons.help, 'Help & Support', 'FAQs, Tutorials, and Contact us'),
+              _buildMenuItem(
+                Icons.help,
+                'Help & Support',
+                'FAQs, Tutorials, and Contact us',
+                () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const HelpSupportScreen()),
+                ),
+              ),
             ],
           ),
         ),
@@ -447,7 +501,7 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
           decoration: _inputDecoration('Alex Rivers'),
         ),
         const SizedBox(height: 32),
-        const Text('Choose a Profile Icon', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF052A1E))),
+        const Text('Choose a Profile Icon (Optional)', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF052A1E))),
         const SizedBox(height: 16),
         GridView.builder(
           shrinkWrap: true,
@@ -609,9 +663,9 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
     );
   }
 
-  Widget _buildMenuItem(IconData icon, String title, String subtitle) {
+  Widget _buildMenuItem(IconData icon, String title, String subtitle, VoidCallback onTap) {
     return InkWell(
-      onTap: () {},
+      onTap: onTap,
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Row(

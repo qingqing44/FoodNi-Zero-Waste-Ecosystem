@@ -1,7 +1,9 @@
+import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'authentication/profile_screen.dart';
 import 'camera/camera_service.dart';
 import 'camera/details_screen.dart';
@@ -31,6 +33,9 @@ class _HomeScreenState extends State<HomeScreen> {
   List<Recipe>? _recommendedRecipes;
   bool _recipeLoading = false;
   String? _recipeError;
+
+  // ── Profile avatar state ──────────────────────────────────────────────────
+  String? _localAvatarUrl;
 
   static const List<_Recipe> _recipes = [
     _Recipe(
@@ -109,6 +114,18 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _loadRecommendations();
+    _loadLocalAvatar();
+  }
+
+  /// Load locally saved profile avatar from SharedPreferences.
+  Future<void> _loadLocalAvatar() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final prefs = await SharedPreferences.getInstance();
+    final localPath = prefs.getString('local_avatar_path_$uid');
+    if (localPath != null && File(localPath).existsSync()) {
+      if (mounted) setState(() => _localAvatarUrl = localPath);
+    }
   }
 
   @override
@@ -737,6 +754,19 @@ class _HomeScreenState extends State<HomeScreen> {
     return widgets;
   }
 
+  /// Returns the correct [ImageProvider] for the user's avatar.
+  /// Prefers a locally saved file; falls back to Firebase photoURL.
+  ImageProvider? _buildAvatarImage() {
+    if (_localAvatarUrl != null && File(_localAvatarUrl!).existsSync()) {
+      return FileImage(File(_localAvatarUrl!));
+    }
+    final photoUrl = FirebaseAuth.instance.currentUser?.photoURL;
+    if (photoUrl != null && photoUrl.isNotEmpty) {
+      return NetworkImage(photoUrl);
+    }
+    return null;
+  }
+
   Widget _buildAppBar(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
@@ -756,14 +786,14 @@ class _HomeScreenState extends State<HomeScreen> {
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(builder: (context) => const MyProfileScreen()),
-            ),
+            ).then((_) => _loadLocalAvatar()),
             child: CircleAvatar(
               radius: 18,
               backgroundColor: const Color(0xFFE8F3EF),
-              backgroundImage: NetworkImage(
-                FirebaseAuth.instance.currentUser?.photoURL ??
-                    'https://ui-avatars.com/api/?name=User&background=random',
-              ),
+              backgroundImage: _buildAvatarImage(),
+              child: _buildAvatarImage() == null
+                  ? const Icon(Icons.person, size: 20, color: Color(0xFF052A1E))
+                  : null,
             ),
           ),
         ],
