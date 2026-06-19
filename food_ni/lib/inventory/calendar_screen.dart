@@ -28,6 +28,20 @@ class _InventoryCalendarScreenState extends State<InventoryCalendarScreen> {
   final _noteController = TextEditingController();
   bool _isSavingNote = false;
   String _currentNoteDate = '';
+  Stream<QuerySnapshot>? _foodItemsStream;
+
+  Stream<QuerySnapshot>? get _stream {
+    if (_foodItemsStream == null) {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        _foodItemsStream = FirebaseFirestore.instance
+            .collection('foodItems')
+            .where('userId', isEqualTo: user.uid)
+            .snapshots();
+      }
+    }
+    return _foodItemsStream;
+  }
 
   @override
   void initState() {
@@ -301,10 +315,7 @@ class _InventoryCalendarScreenState extends State<InventoryCalendarScreen> {
         ),
       ),
       body: StreamBuilder<QuerySnapshot>(
-        stream: FirebaseFirestore.instance
-            .collection('foodItems')
-            .where('userId', isEqualTo: user.uid)
-            .snapshots(),
+        stream: _stream,
         builder: (context, snapshot) {
           if (snapshot.hasError) {
             return Center(child: Text('Error: ${snapshot.error}'));

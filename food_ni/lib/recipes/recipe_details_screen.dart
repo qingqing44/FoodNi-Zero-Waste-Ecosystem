@@ -1,5 +1,8 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import '../models/recipe.dart';
+import '../models/food_item.dart';
 
 /// Full-page recipe detail view.
 ///
@@ -9,9 +12,14 @@ import '../models/recipe.dart';
 /// - Ingredient list
 /// - Numbered cooking instructions
 class RecipeDetailsScreen extends StatelessWidget {
-  const RecipeDetailsScreen({super.key, required this.recipe});
+  const RecipeDetailsScreen({
+    super.key,
+    required this.recipe,
+    this.highlightItems,
+  });
 
   final Recipe recipe;
+  final List<FoodItem>? highlightItems;
 
   // ── Colors (shared with rest of FoodNi) ────────────────────────────────────
   static const _darkGreen = Color(0xFF052A1E);
@@ -35,7 +43,7 @@ class RecipeDetailsScreen extends StatelessWidget {
                   const SizedBox(height: 12),
                   _buildMetaRow(),
                   const SizedBox(height: 24),
-                  _buildSection('Ingredients', _buildIngredients()),
+                  _buildSection('Ingredients', _buildIngredientsSection()),
                   const SizedBox(height: 24),
                   _buildSection('Instructions', _buildInstructions()),
                   const SizedBox(height: 40),
@@ -150,48 +158,168 @@ class RecipeDetailsScreen extends StatelessWidget {
 
   // ── Ingredients list ───────────────────────────────────────────────────────
 
-  Widget _buildIngredients() {
+  Widget _buildIngredientsSection() {
+    if (highlightItems != null) {
+      return _buildIngredients(highlightItems!);
+    }
+
+    return FutureBuilder<List<FoodItem>>(
+      future: _fetchInventory(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(
+            child: SizedBox(
+              height: 40,
+              width: 40,
+              child: CircularProgressIndicator(color: _accentGreen),
+            ),
+          );
+        }
+        final items = snapshot.data ?? [];
+        return _buildIngredients(items);
+      },
+    );
+  }
+
+  Future<List<FoodItem>> _fetchInventory() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return [];
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('foodItems')
+          .where('userId', isEqualTo: user.uid)
+          .get();
+      return snapshot.docs
+          .map((doc) => FoodItem.fromFirestore(doc.data(), doc.id))
+          .toList();
+    } catch (e) {
+      return [];
+    }
+  }
+
+  bool _isMatched(String recipeIngredient, List<FoodItem> items) {
+    final normIng = recipeIngredient.trim().toLowerCase();
+    for (final item in items) {
+      final normItem = item.name.trim().toLowerCase();
+      if (normIng == normItem || normIng.contains(normItem) || normItem.contains(normIng)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  Widget _buildIngredients(List<FoodItem> items) {
     if (recipe.ingredients.isEmpty) {
       return const Text(
         'No ingredients listed.',
         style: TextStyle(color: Colors.grey),
       );
     }
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: recipe.ingredients.map((ing) {
-        return Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+
+    final matched = <String>[];
+    final missing = <String>[];
+
+    for (final ing in recipe.ingredients) {
+      if (_isMatched(ing, items)) {
+        matched.add(ing);
+      } else {
+        missing.add(ing);
+      }
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Availability summary banner
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: const Color(0xFFE2E8F0)),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.02),
-                blurRadius: 4,
-                offset: const Offset(0, 2),
-              ),
-            ],
+            color: missing.isEmpty
+                ? const Color(0xFFE8F3EF)
+                : const Color(0xFFFFF3E0),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: missing.isEmpty
+                  ? const Color(0xFF34A853).withValues(alpha: 0.3)
+                  : const Color(0xFFE28743).withValues(alpha: 0.3),
+            ),
           ),
           child: Row(
-            mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.check_box_outlined, size: 16, color: _accentGreen),
-              const SizedBox(width: 8),
-              Text(
-                _capitalize(ing),
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: _darkGreen,
+              Icon(
+                missing.isEmpty ? Icons.check_circle : Icons.shopping_cart_outlined,
+                color: missing.isEmpty ? _accentGreen : const Color(0xFFE28743),
+                size: 20,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  missing.isEmpty
+                      ? 'You have all the ingredients for this recipe!'
+                      : 'You have ${matched.length} of ${recipe.ingredients.length} ingredients. You are missing ${missing.length} items.',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: missing.isEmpty ? _darkGreen : const Color(0xFF052A1E),
+                  ),
                 ),
               ),
             ],
           ),
-        );
-      }).toList(),
+        ),
+        const SizedBox(height: 16),
+
+        // Ingredients chips
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: recipe.ingredients.map((ing) {
+            final hasIt = _isMatched(ing, items);
+            return Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                color: hasIt ? const Color(0xFFE8F3EF) : const Color(0xFFFEEBEE).withValues(alpha: 0.5),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: hasIt
+                      ? const Color(0xFF34A853).withValues(alpha: 0.3)
+                      : Colors.red.shade100,
+                  width: 1.2,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.02),
+                    blurRadius: 4,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    hasIt ? Icons.check_box_outlined : Icons.add_shopping_cart_outlined,
+                    size: 16,
+                    color: hasIt ? _accentGreen : Colors.red.shade400,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    _capitalize(ing),
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: hasIt ? _darkGreen : Colors.red.shade900,
+                      decoration: hasIt ? null : TextDecoration.lineThrough,
+                      decorationColor: Colors.red.shade300,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }).toList(),
+        ),
+      ],
     );
   }
 

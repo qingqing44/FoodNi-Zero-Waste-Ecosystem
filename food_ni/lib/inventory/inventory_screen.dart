@@ -4,10 +4,13 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 
 import '../notifications/expiry_notification_service.dart';
+import '../models/food_item.dart';
+import '../recipes/recipe_match_screen.dart';
 import 'add_item_screen.dart';
 import 'calendar_screen.dart';
 import 'food_status_utils.dart';
@@ -35,6 +38,24 @@ class _InventoryScreenState extends State<InventoryScreen> {
   String _searchQuery = '';
   String _selectedCategory = 'All';
   String _selectedStatus = 'All';
+
+  bool _isSelectionMode = false;
+  final Map<String, FoodItem> _selectedItems = {};
+  Stream<QuerySnapshot>? _foodItemsStream;
+
+  Stream<QuerySnapshot>? get _stream {
+    if (_foodItemsStream == null) {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        _foodItemsStream = FirebaseFirestore.instance
+            .collection('foodItems')
+            .where('userId', isEqualTo: user.uid)
+            .orderBy('scanDate', descending: true)
+            .snapshots();
+      }
+    }
+    return _foodItemsStream;
+  }
 
   @override
   void initState() {
@@ -229,141 +250,303 @@ class _InventoryScreenState extends State<InventoryScreen> {
         backgroundColor: Colors.transparent,
         elevation: 0,
         iconTheme: const IconThemeData(color: Color(0xFF052A1E)),
-        title: const Text(
-          'My Inventory',
-          style: TextStyle(
+        leading: _isSelectionMode
+            ? IconButton(
+                icon: const Icon(Icons.close),
+                onPressed: () {
+                  setState(() {
+                    _isSelectionMode = false;
+                    _selectedItems.clear();
+                  });
+                },
+              )
+            : null,
+        title: Text(
+          _isSelectionMode ? '${_selectedItems.length} selected' : 'My Inventory',
+          style: const TextStyle(
             color: Color(0xFF052A1E),
             fontWeight: FontWeight.bold,
           ),
         ),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.calendar_month_outlined),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const InventoryCalendarScreen(),
-                ),
-              );
-            },
-            tooltip: 'View Calendar',
-          ),
+          if (!_isSelectionMode) ...[
+            IconButton(
+              icon: const Icon(Icons.checklist_rounded),
+              tooltip: 'Select items',
+              onPressed: () {
+                setState(() {
+                  _isSelectionMode = true;
+                });
+              },
+            ),
+            IconButton(
+              icon: const Icon(Icons.calendar_month_outlined),
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const InventoryCalendarScreen(),
+                  ),
+                );
+              },
+              tooltip: 'View Calendar',
+            ),
+          ],
         ],
       ),
-      body: StreamBuilder<QuerySnapshot>(
-        stream: FirebaseFirestore.instance
-            .collection('foodItems')
-            .where('userId', isEqualTo: user.uid)
-            .orderBy('scanDate', descending: true)
-            .snapshots(),
-        builder: (context, snapshot) {
-          if (snapshot.hasError) {
-            return Center(child: Text('Error: ${snapshot.error}'));
-          }
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(
+            child: StreamBuilder<QuerySnapshot>(
+              stream: _stream,
+              builder: (context, snapshot) {
+                if (snapshot.hasError) {
+                  return Center(child: Text('Error: ${snapshot.error}'));
+                }
 
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(
-              child: CircularProgressIndicator(color: Color(0xFF052A1E)),
-            );
-          }
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(
+                    child: CircularProgressIndicator(color: Color(0xFF052A1E)),
+                  );
+                }
 
-          final docs = snapshot.data?.docs ?? [];
+                final docs = snapshot.data?.docs ?? [];
 
-          if (docs.isEmpty) {
-            return const Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.kitchen_outlined, size: 64, color: Colors.grey),
-                  SizedBox(height: 16),
-                  Text(
-                    'No food items yet.\nEnter manually or tap the scanner to add some!',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: Color(0xFF666666), fontSize: 16),
-                  ),
-                ],
-              ),
-            );
-          }
-
-          final categories = _filterOptions(docs, 'category');
-          final statuses = _statusOptions;
-          final filteredDocs = docs.where(_matchesFilters).toList();
-
-          return Column(
-            children: [
-              _buildSearchAndFilters(
-                categories: categories,
-                statuses: statuses,
-              ),
-              Expanded(
-                child: filteredDocs.isEmpty
-                    ? Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(
-                              Icons.search_off,
-                              size: 56,
-                              color: Colors.grey,
-                            ),
-                            const SizedBox(height: 12),
-                            const Text(
-                              'No matching food items found',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                color: Color(0xFF666666),
-                                fontSize: 16,
-                              ),
-                            ),
-                            TextButton(
-                              onPressed: _clearFilters,
-                              child: const Text(
-                                'Clear search and filters',
-                                style: TextStyle(color: Color(0xFF34A853)),
-                              ),
-                            ),
-                          ],
+                if (docs.isEmpty) {
+                  return const Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.kitchen_outlined, size: 64, color: Colors.grey),
+                        SizedBox(height: 16),
+                        Text(
+                          'No food items yet.\nEnter manually or tap the scanner to add some!',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: Color(0xFF666666), fontSize: 16),
                         ),
-                      )
-                    : ListView.builder(
-                        padding: const EdgeInsets.all(16),
-                        itemCount: filteredDocs.length,
-                        itemBuilder: (context, index) {
-                          final doc = filteredDocs[index];
-                          final data = doc.data() as Map<String, dynamic>;
+                      ],
+                    ),
+                  );
+                }
 
-                          return InkWell(
-                            onTap: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) =>
-                                      InventoryDetailsScreen(item: doc),
-                                ),
-                              );
-                            },
-                            borderRadius: BorderRadius.circular(16),
-                            child: _InventoryCard(data: data),
+                final categories = _filterOptions(docs, 'category');
+                final statuses = _statusOptions;
+                final filteredDocs = docs.where(_matchesFilters).toList();
+
+                return Column(
+                  children: [
+                    _buildSearchAndFilters(
+                      categories: categories,
+                      statuses: statuses,
+                    ),
+                    Expanded(
+                      child: filteredDocs.isEmpty
+                          ? Center(
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(
+                                    Icons.search_off,
+                                    size: 56,
+                                    color: Colors.grey,
+                                  ),
+                                  const SizedBox(height: 12),
+                                  const Text(
+                                    'No matching food items found',
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      color: Color(0xFF666666),
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                                  TextButton(
+                                    onPressed: _clearFilters,
+                                    child: const Text(
+                                      'Clear search and filters',
+                                      style: TextStyle(color: Color(0xFF34A853)),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            )
+                          : ListView.builder(
+                              padding: const EdgeInsets.all(16),
+                              itemCount: filteredDocs.length,
+                              itemBuilder: (context, index) {
+                                final doc = filteredDocs[index];
+                                final data = doc.data() as Map<String, dynamic>;
+                                final itemId = doc.id;
+
+                                return GestureDetector(
+                                  onTap: () {
+                                    if (_isSelectionMode) {
+                                      setState(() {
+                                        if (_selectedItems.containsKey(itemId)) {
+                                          _selectedItems.remove(itemId);
+                                        } else {
+                                          _selectedItems[itemId] =
+                                              FoodItem.fromFirestore(data, itemId);
+                                        }
+                                        if (_selectedItems.isEmpty) {
+                                          _isSelectionMode = false;
+                                        }
+                                      });
+                                    } else {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (context) =>
+                                              InventoryDetailsScreen(item: doc),
+                                        ),
+                                      );
+                                    }
+                                  },
+                                  onLongPress: () {
+                                    HapticFeedback.mediumImpact();
+                                    if (!_isSelectionMode) {
+                                      setState(() {
+                                        _isSelectionMode = true;
+                                        _selectedItems[itemId] =
+                                            FoodItem.fromFirestore(data, itemId);
+                                      });
+                                    }
+                                  },
+                                  child: _InventoryCard(
+                                    data: data,
+                                    isSelectionMode: _isSelectionMode,
+                                    isSelected: _selectedItems.containsKey(itemId),
+                                    onSelectedChanged: (val) {
+                                      setState(() {
+                                        if (val == true) {
+                                          _selectedItems[itemId] =
+                                              FoodItem.fromFirestore(data, itemId);
+                                        } else {
+                                          _selectedItems.remove(itemId);
+                                        }
+                                        if (_selectedItems.isEmpty) {
+                                          _isSelectionMode = false;
+                                        }
+                                      });
+                                    },
+                                  ),
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+
+          // ── Selection bar: lives INSIDE the Column so it always gets
+          //    a bounded width (= screen width) from Column's cross-axis.
+          //    This prevents the "BoxConstraints forces an infinite width"
+          //    crash that occurs when a Row's non-flex child (ElevatedButton)
+          //    is measured with unconstrained width inside a Stack/Positioned.
+          if (_isSelectionMode)
+            SafeArea(
+              top: false,
+              child: Container(
+                decoration: const BoxDecoration(
+                  color: Color(0xFF052A1E),
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black26,
+                      blurRadius: 12,
+                      offset: Offset(0, -4),
+                    ),
+                  ],
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '${_selectedItems.length} food item${_selectedItems.length == 1 ? '' : 's'}',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          const Text(
+                            'Combine to find recipes',
+                            style: TextStyle(
+                              color: Colors.white60,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    // SizedBox gives ElevatedButton.icon a TIGHT bounded width.
+                    // Without this, Row passes maxWidth=infinity to the button
+                    // which causes BoxConstraints forces an infinite width crash.
+                    SizedBox(
+                      width: 155,
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF34A853),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 12,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          elevation: 0,
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => RecipeMatchScreen(
+                                selectedItems: _selectedItems.values.toList(),
+                              ),
+                            ),
                           );
                         },
+                        icon: const Icon(Icons.restaurant_menu, size: 18),
+                        label: const Text(
+                          'Match Recipes',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                       ),
+                    ),
+                  ],
+                ),
               ),
-            ],
-          );
-        },
+            ),
+        ],
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (context) => const AddItemScreen()),
-          );
-        },
-        backgroundColor: const Color(0xFF052A1E),
-        child: const Icon(Icons.add, color: Colors.white),
-      ),
+      floatingActionButton: _isSelectionMode
+          ? null
+          : FloatingActionButton(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const AddItemScreen()),
+                );
+              },
+              backgroundColor: const Color(0xFF052A1E),
+              child: const Icon(Icons.add, color: Colors.white),
+            ),
+
     );
   }
 }
@@ -372,9 +555,17 @@ class _InventoryScreenState extends State<InventoryScreen> {
 
 /// A single inventory card that shows the thumbnail, food name, freshness badge, category chip and estimated days remaining.
 class _InventoryCard extends StatelessWidget {
-  const _InventoryCard({required this.data});
+  const _InventoryCard({
+    required this.data,
+    this.isSelectionMode = false,
+    this.isSelected = false,
+    this.onSelectedChanged,
+  });
 
   final Map<String, dynamic> data;
+  final bool isSelectionMode;
+  final bool isSelected;
+  final ValueChanged<bool?>? onSelectedChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -405,16 +596,31 @@ class _InventoryCard extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 14),
       elevation: 2,
       shadowColor: Colors.black12,
-      color: Colors.white,
+      color: isSelected ? const Color(0xFFE8F3EF) : Colors.white,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: const BorderSide(color: Color(0xFFF0F0F0)),
+        side: BorderSide(
+          color: isSelected ? const Color(0xFF34A853) : const Color(0xFFF0F0F0),
+          width: isSelected ? 1.5 : 1.0,
+        ),
       ),
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
+            if (isSelectionMode) ...[
+              Checkbox(
+                value: isSelected,
+                activeColor: const Color(0xFF34A853),
+                checkColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                onChanged: onSelectedChanged,
+              ),
+              const SizedBox(width: 8),
+            ],
             ClipRRect(
               borderRadius: BorderRadius.circular(12),
               child: _buildThumbnail(thumbPath),
