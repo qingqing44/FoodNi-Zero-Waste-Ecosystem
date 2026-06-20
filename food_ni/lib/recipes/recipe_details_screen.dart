@@ -76,17 +76,49 @@ class RecipeDetailsScreen extends StatelessWidget {
     );
   }
 
-  Widget _imagePlaceholder() => Container(
-    color: const Color(0xFFD0E8D8),
-    child: const Center(
-      child: Icon(Icons.restaurant, size: 64, color: Color(0xFF34A853)),
-    ),
-  );
+  Widget _imagePlaceholder() {
+    if (recipe.source == 'ai') {
+      return Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Color(0xFF0A4A33), Color(0xFF34A853)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+        ),
+        child: const Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.auto_awesome_rounded, size: 54, color: Colors.white),
+              SizedBox(height: 10),
+              Text(
+                'AI GENERATED RECIPE',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 1.1,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      color: const Color(0xFFD0E8D8),
+      child: const Center(
+        child: Icon(Icons.restaurant, size: 64, color: Color(0xFF34A853)),
+      ),
+    );
+  }
 
   // ── Title + source badge ───────────────────────────────────────────────────
 
   Widget _buildTitleRow() {
-    final isFirebase = recipe.source == 'firebase';
+    final source = recipe.source;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -102,7 +134,7 @@ class RecipeDetailsScreen extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 12),
-        _SourceBadge(isFirebase: isFirebase),
+        _SourceBadge(source: source),
       ],
     );
   }
@@ -422,42 +454,53 @@ class RecipeDetailsScreen extends StatelessWidget {
 // ── Sub-widgets ────────────────────────────────────────────────────────────────
 
 class _SourceBadge extends StatelessWidget {
-  const _SourceBadge({required this.isFirebase});
+  const _SourceBadge({required this.source});
 
-  final bool isFirebase;
+  final String source;
 
   @override
   Widget build(BuildContext context) {
+    final isFirebase = source == 'firebase';
+    final isAi = source == 'ai';
+    final color = isFirebase
+        ? const Color(0xFF34A853)
+        : isAi
+        ? Colors.purple
+        : Colors.grey.shade600;
+    final background = isFirebase
+        ? const Color(0xFFE8F3EF)
+        : isAi
+        ? const Color(0xFFF3E5F5)
+        : const Color(0xFFF0F0F0);
+    final label = isFirebase ? 'FoodNi' : isAi ? 'AI Generated' : 'External';
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
-        color: isFirebase
-            ? const Color(0xFFE8F3EF)
-            : const Color(0xFFF0F0F0),
+        color: background,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: isFirebase
-              ? const Color(0xFF34A853).withValues(alpha: 0.4)
-              : Colors.grey.shade300,
+          color: color.withValues(alpha: 0.35),
         ),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(
-            isFirebase ? Icons.local_fire_department : Icons.public,
+            isFirebase
+                ? Icons.local_fire_department
+                : isAi
+                ? Icons.auto_awesome_rounded
+                : Icons.public,
             size: 12,
-            color: isFirebase ? const Color(0xFF34A853) : Colors.grey.shade600,
+            color: color,
           ),
           const SizedBox(width: 4),
           Text(
-            isFirebase ? 'FoodNi' : 'External',
+            label,
             style: TextStyle(
               fontSize: 11,
               fontWeight: FontWeight.bold,
-              color: isFirebase
-                  ? const Color(0xFF34A853)
-                  : Colors.grey.shade600,
+              color: color,
             ),
           ),
         ],

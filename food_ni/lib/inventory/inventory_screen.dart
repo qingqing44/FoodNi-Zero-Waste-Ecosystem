@@ -10,6 +10,7 @@ import 'package:path/path.dart' as p;
 
 import '../notifications/expiry_notification_service.dart';
 import '../models/food_item.dart';
+import '../recipes/ai_recipe_screen.dart';
 import '../recipes/recipe_match_screen.dart';
 import 'add_item_screen.dart';
 import 'calendar_screen.dart';
@@ -461,72 +462,102 @@ class _InventoryScreenState extends State<InventoryScreen> {
                   ],
                 ),
                 padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                child: Row(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            '${_selectedItems.length} food item${_selectedItems.length == 1 ? '' : 's'}',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 14,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          const Text(
-                            'Combine to find recipes',
-                            style: TextStyle(
-                              color: Colors.white60,
-                              fontSize: 11,
-                            ),
-                          ),
-                        ],
+                    Text(
+                      '${_selectedItems.length} food item${_selectedItems.length == 1 ? '' : 's'} selected',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
                       ),
                     ),
-                    const SizedBox(width: 16),
-                    // SizedBox gives ElevatedButton.icon a TIGHT bounded width.
-                    // Without this, Row passes maxWidth=infinity to the button
-                    // which causes BoxConstraints forces an infinite width crash.
-                    SizedBox(
-                      width: 155,
-                      child: ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF34A853),
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 12,
-                          ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          elevation: 0,
-                          minimumSize: Size.zero,
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        ),
-                        onPressed: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => RecipeMatchScreen(
-                                selectedItems: _selectedItems.values.toList(),
+                    const SizedBox(height: 2),
+                    const Text(
+                      'Find existing recipes or create new AI ideas',
+                      style: TextStyle(color: Colors.white60, fontSize: 11),
+                    ),
+                    const SizedBox(height: 14),
+                    LayoutBuilder(
+                      builder: (context, constraints) {
+                        final isNarrow = constraints.maxWidth < 390;
+                        final matchButton = ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF34A853),
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
                               ),
+                              elevation: 0,
+                              minimumSize: Size.zero,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
+                            onPressed: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => RecipeMatchScreen(
+                                    selectedItems: _selectedItems.values.toList(),
+                                  ),
+                                ),
+                              );
+                            },
+                            icon: const Icon(Icons.restaurant_menu, size: 17),
+                            label: const Text(
+                              'Match Recipes',
+                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
                             ),
                           );
-                        },
-                        icon: const Icon(Icons.restaurant_menu, size: 18),
-                        label: const Text(
-                          'Match Recipes',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
+                        final aiButton = OutlinedButton.icon(
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.white,
+                              side: const BorderSide(color: Color(0xFFB8E6C5)),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              minimumSize: Size.zero,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
+                            onPressed: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => AiRecipeScreen(
+                                    selectedItems: _selectedItems.values.toList(),
+                                  ),
+                                ),
+                              );
+                            },
+                            icon: const Icon(Icons.auto_awesome_rounded, size: 17),
+                            label: const Text(
+                              'Generate AI',
+                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                            ),
+                          );
+
+                        if (isNarrow) {
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              matchButton,
+                              const SizedBox(height: 10),
+                              aiButton,
+                            ],
+                          );
+                        }
+
+                        return Row(
+                          children: [
+                            Expanded(child: matchButton),
+                            const SizedBox(width: 10),
+                            Expanded(child: aiButton),
+                          ],
+                        );
+                      },
                     ),
                   ],
                 ),
