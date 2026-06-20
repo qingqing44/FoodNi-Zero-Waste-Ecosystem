@@ -75,4 +75,40 @@ class AssistantHistoryService {
     }
     await batch.commit();
   }
+
+  /// Stores one complete chat session in a single document so it can be
+  /// reviewed, continued, or deleted independently.
+  Future<String> saveConversation({
+    String? conversationId,
+    required String userId,
+    required List<ChatMessage> messages,
+  }) async {
+    final meaningfulMessages = messages
+        .where((message) => message.text.trim().isNotEmpty)
+        .toList();
+    final firstQuestion = meaningfulMessages.cast<ChatMessage?>().firstWhere(
+          (message) => message?.isUser ?? false,
+          orElse: () => null,
+        );
+    if (firstQuestion == null) return conversationId ?? '';
+
+    final doc = conversationId == null
+        ? _firestore.collection(collectionName).doc()
+        : _firestore.collection(collectionName).doc(conversationId);
+    await doc.set({
+      'userId': userId,
+      'title': firstQuestion.text.trim(),
+      'messages': meaningfulMessages
+          .map((message) => {'text': message.text, 'isUser': message.isUser})
+          .toList(),
+      'messageCount': meaningfulMessages.length,
+      'lastAnswer': meaningfulMessages.isEmpty ? '' : meaningfulMessages.last.text,
+      'updatedAt': FieldValue.serverTimestamp(),
+      if (conversationId == null) 'createdAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+    return doc.id;
+  }
+
+  Future<void> deleteConversation(String conversationId) =>
+      _firestore.collection(collectionName).doc(conversationId).delete();
 }

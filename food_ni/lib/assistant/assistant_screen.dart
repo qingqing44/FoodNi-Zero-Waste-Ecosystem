@@ -4,10 +4,14 @@ import 'package:flutter/material.dart';
 
 import '../inventory/food_status_utils.dart';
 import 'assistant_chat_service.dart';
+import 'assistant_history_screen.dart';
 import 'assistant_history_service.dart';
 
 class AssistantScreen extends StatefulWidget {
-  const AssistantScreen({super.key});
+  const AssistantScreen({super.key, this.conversationId, this.initialMessages});
+
+  final String? conversationId;
+  final List<Map<String, dynamic>>? initialMessages;
 
   @override
   State<AssistantScreen> createState() => _AssistantScreenState();
@@ -21,6 +25,7 @@ class _AssistantScreenState extends State<AssistantScreen> {
   ];
 
   final TextEditingController _controller = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
   final List<ChatMessage> _messages = [];
   final AssistantChatService _chatService = AssistantChatService();
   final AssistantHistoryService _historyService = AssistantHistoryService();
@@ -28,6 +33,7 @@ class _AssistantScreenState extends State<AssistantScreen> {
   bool _isInitializing = true;
   int _inventoryCount = 0;
   String? _userId;
+  String? _conversationId;
 
   @override
   void initState() {
@@ -38,6 +44,7 @@ class _AssistantScreenState extends State<AssistantScreen> {
   @override
   void dispose() {
     _controller.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -71,18 +78,16 @@ class _AssistantScreenState extends State<AssistantScreen> {
       return;
     }
 
-    List<ChatMessage> savedMessages = [];
-    if (_userId != null) {
-      try {
-        savedMessages = await _historyService.loadMessages(_userId!);
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Could not load chat history: $e')),
-          );
-        }
-      }
-    }
+    _conversationId = widget.conversationId;
+    final savedMessages = (widget.initialMessages ?? const [])
+        .map(
+          (message) => ChatMessage(
+            text: (message['text'] as String? ?? '').trim(),
+            isUser: message['isUser'] as bool? ?? false,
+          ),
+        )
+        .where((message) => message.text.isNotEmpty)
+        .toList();
 
     _chatService.startSession(
       systemPrompt: systemPrompt,
@@ -98,6 +103,7 @@ class _AssistantScreenState extends State<AssistantScreen> {
           ..addAll(savedMessages);
         _isInitializing = false;
       });
+      _scrollToBottom();
       return;
     }
 
@@ -109,13 +115,6 @@ class _AssistantScreenState extends State<AssistantScreen> {
       _isInitializing = false;
     });
 
-    if (_userId != null) {
-      await _historyService.saveMessage(
-        userId: _userId!,
-        text: greeting,
-        isUser: false,
-      );
-    }
   }
 
   Future<void> _resetConversation() async {
@@ -130,7 +129,7 @@ class _AssistantScreenState extends State<AssistantScreen> {
           ),
         ),
         content: const Text(
-          'Are you sure you want to clear your chat history and start a new session?',
+          'Start a new chat? Your saved conversation history will remain available.',
         ),
         actions: [
           TextButton(
@@ -154,19 +153,11 @@ class _AssistantScreenState extends State<AssistantScreen> {
       _isInitializing = true;
     });
 
-    if (_userId != null) {
-      try {
-        await _historyService.clearHistory(_userId!);
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Could not clear chat history: $e')),
-          );
-        }
-      }
-    }
-
-    await _initializeChat(refreshPantryOnly: false);
+    if (!mounted) return;
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(builder: (_) => const AssistantScreen()),
+    );
   }
 
   List<Map<String, String>> _toGroqHistory(List<ChatMessage> messages) {
@@ -303,15 +294,27 @@ $inventoryContext
     return buffer.toString();
   }
 
-  Future<void> _persistMessage(ChatMessage message) async {
+  Future<void> _saveConversation() async {
     final userId = _userId;
     if (userId == null) return;
-
-    await _historyService.saveMessage(
+    final id = await _historyService.saveConversation(
+      conversationId: _conversationId,
       userId: userId,
-      text: message.text,
-      isUser: message.isUser,
+      messages: _messages,
     );
+    if (id.isNotEmpty) _conversationId = id;
+  }
+
+  void _scrollToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOut,
+        );
+      }
+    });
   }
 
   Future<void> _sendMessage() async {
@@ -325,7 +328,7 @@ $inventoryContext
       _controller.clear();
     });
 
-    await _persistMessage(userMessage);
+    _scrollToBottom();
 
     try {
       final responseText = await _chatService.sendMessage(text);
@@ -336,7 +339,8 @@ $inventoryContext
         _messages.add(assistantMessage);
       });
 
-      await _persistMessage(assistantMessage);
+      await _saveConversation();
+      _scrollToBottom();
     } catch (e) {
       final fallbackMessage = e is AssistantChatException
           ? e.userMessage
@@ -346,6 +350,7 @@ $inventoryContext
         _isLoading = false;
         _messages.add(errorMessage);
       });
+      _scrollToBottom();
     }
   }
 
@@ -365,6 +370,14 @@ $inventoryContext
           ),
         ),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.history_rounded),
+            tooltip: 'Review conversations',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const AssistantHistoryScreen()),
+            ),
+          ),
           IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: 'Reset chat history',
@@ -391,6 +404,7 @@ $inventoryContext
                 children: [
                   Expanded(
                     child: ListView.builder(
+                      controller: _scrollController,
                       padding: const EdgeInsets.all(16),
                       itemCount: _messages.length,
                       itemBuilder: (context, index) {
