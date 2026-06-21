@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -15,6 +16,7 @@ import 'models/food_item.dart';
 import 'recipes/recipe_details_screen.dart';
 import 'services/recipes/recipe_service.dart';
 import 'notifications/expiry_notification_service.dart';
+import 'social/upload_recipe_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -91,10 +93,11 @@ class _HomeScreenState extends State<HomeScreen> {
   bool get _hasActiveFilters =>
       _searchQuery.trim().isNotEmpty || _selectedCategory != 'All Recipes';
 
-  List<_Recipe> get _filteredRecipes {
+  List<_Recipe> _filteredRecipes(List<_Recipe> uploadedRecipes) {
     final query = _searchQuery.trim().toLowerCase();
+    final recipes = [...uploadedRecipes, ..._recipes];
 
-    return _recipes.where((recipe) {
+    return recipes.where((recipe) {
       final matchesSearch =
           query.isEmpty ||
           recipe.title.toLowerCase().contains(query) ||
@@ -108,6 +111,88 @@ class _HomeScreenState extends State<HomeScreen> {
 
       return matchesSearch && matchesCategory;
     }).toList();
+  }
+
+  List<_Recipe> _uploadedRecipesFromSnapshot(QuerySnapshot? snapshot) {
+    if (snapshot == null) return const [];
+
+    return snapshot.docs.map((doc) {
+      final data = doc.data() as Map<String, dynamic>? ?? {};
+      final authorName = (data['authorName'] as String?)?.trim();
+      final cookingTime = (data['cookingTime'] as String?)?.trim();
+
+      return _Recipe(
+        id: doc.id,
+        image: '',
+        imageBase64: data['imageBase64'] as String?,
+        title: (data['title'] as String?)?.trim().isNotEmpty == true
+            ? (data['title'] as String).trim()
+            : 'Untitled Recipe',
+        description: (data['description'] as String?)?.trim() ?? '',
+        tags: const ['Community'],
+        category: 'All Recipes',
+        ingredients: _parseStringList(data['ingredients']),
+        steps: (data['steps'] as String?)?.trim() ?? '',
+        authorName: authorName != null && authorName.isNotEmpty
+            ? authorName
+            : 'Anonymous',
+        authorImage:
+            'https://ui-avatars.com/api/?name=${Uri.encodeComponent(authorName ?? 'Anonymous')}&background=random',
+        time: cookingTime != null && cookingTime.isNotEmpty
+            ? cookingTime
+            : 'Recipe',
+        level: 'Uploaded',
+      );
+    }).toList();
+  }
+
+  static List<String> _parseStringList(dynamic value) {
+    if (value is List) {
+      return value
+          .map((item) => item?.toString().trim() ?? '')
+          .where((item) => item.isNotEmpty)
+          .toList();
+    }
+    return const [];
+  }
+
+  void _openSocialRecipeDetails(_Recipe recipe) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => RecipeDetailsScreen(
+          recipe: Recipe(
+            id: recipe.id,
+            title: recipe.title,
+            imageUrl: recipe.image,
+            imageBase64: recipe.imageBase64,
+            ingredients: recipe.ingredients,
+            instructions: _splitRecipeSteps(recipe.steps, recipe.description),
+            preparationTime: _parseRecipeMinutes(recipe.time),
+            difficulty: recipe.level,
+            source: recipe.imageBase64 == null ? 'firebase' : 'community',
+          ),
+        ),
+      ),
+    );
+  }
+
+  static List<String> _splitRecipeSteps(String steps, String fallback) {
+    final text = steps.trim().isNotEmpty ? steps.trim() : fallback.trim();
+    if (text.isEmpty) return const [];
+
+    return text
+        .split(RegExp(r'\r?\n'))
+        .map((step) => step.trim())
+        .where((step) => step.isNotEmpty)
+        .map((step) => step.replaceFirst(RegExp(r'^\d+[\).\s-]*'), '').trim())
+        .where((step) => step.isNotEmpty)
+        .toList();
+  }
+
+  static int _parseRecipeMinutes(String time) {
+    final match = RegExp(r'\d+').firstMatch(time);
+    return match == null ? 0 : int.tryParse(match.group(0)!) ?? 0;
   }
 
   @override
@@ -178,8 +263,10 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     // After loading recommendations, fire off the daily check in the background.
-    Future.microtask(() =>
-        ExpiryNotificationService.instance.checkAndSendDailyExpiryNotifications());
+    Future.microtask(
+      () => ExpiryNotificationService.instance
+          .checkAndSendDailyExpiryNotifications(),
+    );
   }
 
   // ── Social feed filter methods ────────────────────────────────────────────
@@ -265,8 +352,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final recipes = _filteredRecipes;
-
     return Scaffold(
       backgroundColor: const Color(0xFFF9F8F4),
       body: SafeArea(
@@ -296,7 +381,36 @@ class _HomeScreenState extends State<HomeScreen> {
                     const SizedBox(height: 24),
 
                     // ── Social Feed ─────────────────────────────────────────
-                    ..._buildRecipeFeed(recipes),
+                    StreamBuilder<QuerySnapshot>(
+                      stream: FirebaseFirestore.instance
+                          .collection('recipes')
+                          .orderBy('createdAt', descending: true)
+                          .snapshots(),
+                      builder: (context, snapshot) {
+                        final uploadedRecipes = _uploadedRecipesFromSnapshot(
+                          snapshot.data,
+                        );
+                        final recipes = _filteredRecipes(uploadedRecipes);
+
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            if (snapshot.hasError)
+                              const Padding(
+                                padding: EdgeInsets.only(bottom: 16),
+                                child: Text(
+                                  'Uploaded recipes could not be loaded.',
+                                  style: TextStyle(
+                                    color: Color(0xFF666666),
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ),
+                            ..._buildRecipeFeed(recipes),
+                          ],
+                        );
+                      },
+                    ),
                     const SizedBox(height: 80), // Space for bottom nav
                   ],
                 ),
@@ -416,8 +530,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           height: 110,
                           width: 180,
                           fit: BoxFit.cover,
-                          errorBuilder: (_, _, _) =>
-                              _recipeImagePlaceholder(),
+                          errorBuilder: (_, _, _) => _recipeImagePlaceholder(),
                         )
                       : _recipeImagePlaceholder(),
                 ),
@@ -701,11 +814,7 @@ class _HomeScreenState extends State<HomeScreen> {
     height: 110,
     width: 180,
     color: const Color(0xFFD0E8D8),
-    child: const Icon(
-      Icons.restaurant,
-      color: Color(0xFF34A853),
-      size: 36,
-    ),
+    child: const Icon(Icons.restaurant, color: Color(0xFF34A853), size: 36),
   );
 
   // ── Social feed ───────────────────────────────────────────────────────────
@@ -738,6 +847,7 @@ class _HomeScreenState extends State<HomeScreen> {
       widgets.add(
         _buildRecipeCard(
           image: recipe.image,
+          imageBase64: recipe.imageBase64,
           title: recipe.title,
           description: recipe.description,
           rating: recipe.rating,
@@ -746,6 +856,7 @@ class _HomeScreenState extends State<HomeScreen> {
           authorImage: recipe.authorImage,
           time: recipe.time,
           level: recipe.level,
+          onTap: () => _openSocialRecipeDetails(recipe),
         ),
       );
       widgets.add(const SizedBox(height: 24));
@@ -782,19 +893,41 @@ class _HomeScreenState extends State<HomeScreen> {
               fontWeight: FontWeight.bold,
             ),
           ),
-          GestureDetector(
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (context) => const MyProfileScreen()),
-            ).then((_) => _loadLocalAvatar()),
-            child: CircleAvatar(
-              radius: 18,
-              backgroundColor: const Color(0xFFE8F3EF),
-              backgroundImage: _buildAvatarImage(),
-              child: _buildAvatarImage() == null
-                  ? const Icon(Icons.person, size: 20, color: Color(0xFF052A1E))
-                  : null,
-            ),
+          Row(
+            children: [
+              IconButton(
+                tooltip: 'Add Recipe',
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const UploadRecipeScreen(),
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.post_add, color: Color(0xFF052A1E)),
+              ),
+              GestureDetector(
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const MyProfileScreen(),
+                  ),
+                ).then((_) => _loadLocalAvatar()),
+                child: CircleAvatar(
+                  radius: 18,
+                  backgroundColor: const Color(0xFFE8F3EF),
+                  backgroundImage: _buildAvatarImage(),
+                  child: _buildAvatarImage() == null
+                      ? const Icon(
+                          Icons.person,
+                          size: 20,
+                          color: Color(0xFF052A1E),
+                        )
+                      : null,
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -934,6 +1067,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildRecipeCard({
     required String image,
+    String? imageBase64,
     required String title,
     required String description,
     String? rating,
@@ -942,181 +1076,191 @@ class _HomeScreenState extends State<HomeScreen> {
     required String authorImage,
     String time = '15 min',
     String level = 'Beginner',
+    VoidCallback? onTap,
   }) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Stack(
-            children: [
-              ClipRRect(
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(24),
-                ),
-                child: Image.network(
-                  image,
-                  height: 200,
-                  width: double.infinity,
-                  fit: BoxFit.cover,
-                ),
-              ),
-              if (rating != null)
-                Positioned(
-                  top: 12,
-                  right: 12,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.star, color: Colors.orange, size: 14),
-                        const SizedBox(width: 4),
-                        Text(
-                          rating,
-                          style: const TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.05),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Stack(
+              children: [
+                ClipRRect(
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(24),
+                  ),
+                  child: _buildRecipeImage(
+                    image: image,
+                    imageBase64: imageBase64,
                   ),
                 ),
-            ],
-          ),
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: tags
-                      .map(
-                        (tag) => Container(
-                          margin: const EdgeInsets.only(right: 8),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
+                if (rating != null)
+                  Positioned(
+                    top: 12,
+                    right: 12,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.star,
+                            color: Colors.orange,
+                            size: 14,
                           ),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFE8F3EF),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text(
-                            tag,
+                          const SizedBox(width: 4),
+                          Text(
+                            rating,
                             style: const TextStyle(
-                              color: Color(0xFF34A853),
                               fontSize: 10,
                               fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                      )
-                      .toList(),
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            title,
-                            style: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              color: Color(0xFF052A1E),
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            description,
-                            style: TextStyle(
-                              color: Colors.grey.shade600,
-                              fontSize: 12,
-                              height: 1.5,
                             ),
                           ),
                         ],
                       ),
                     ),
-                    const SizedBox(width: 12),
-                    Column(
-                      children: [
-                        CircleAvatar(
-                          radius: 18,
-                          backgroundImage: NetworkImage(authorImage),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          authorName,
-                          style: TextStyle(
-                            fontSize: 9,
-                            color: Colors.grey.shade500,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                const Divider(),
-                Row(
-                  children: [
-                    const Icon(
-                      Icons.access_time,
-                      size: 16,
-                      color: Color(0xFF052A1E),
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      time,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: Color(0xFF052A1E),
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    const Icon(Icons.bolt, size: 16, color: Color(0xFF052A1E)),
-                    const SizedBox(width: 4),
-                    Text(
-                      level,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: Color(0xFF052A1E),
-                      ),
-                    ),
-                    const Spacer(),
-                    const Icon(
-                      Icons.bookmark_outline,
-                      size: 20,
-                      color: Color(0xFF052A1E),
-                    ),
-                  ],
-                ),
+                  ),
               ],
             ),
-          ),
-        ],
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: tags
+                        .map(
+                          (tag) => Container(
+                            margin: const EdgeInsets.only(right: 8),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFE8F3EF),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              tag,
+                              style: const TextStyle(
+                                color: Color(0xFF34A853),
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        )
+                        .toList(),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              title,
+                              style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFF052A1E),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              description,
+                              style: TextStyle(
+                                color: Colors.grey.shade600,
+                                fontSize: 12,
+                                height: 1.5,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Column(
+                        children: [
+                          CircleAvatar(
+                            radius: 18,
+                            backgroundImage: NetworkImage(authorImage),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            authorName,
+                            style: TextStyle(
+                              fontSize: 9,
+                              color: Colors.grey.shade500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  const Divider(),
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.access_time,
+                        size: 16,
+                        color: Color(0xFF052A1E),
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        time,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Color(0xFF052A1E),
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      const Icon(
+                        Icons.bolt,
+                        size: 16,
+                        color: Color(0xFF052A1E),
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        level,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Color(0xFF052A1E),
+                        ),
+                      ),
+                      const Spacer(),
+                      const Icon(
+                        Icons.bookmark_outline,
+                        size: 20,
+                        color: Color(0xFF052A1E),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1205,6 +1349,45 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildRecipeImage({required String image, String? imageBase64}) {
+    if (imageBase64 != null && imageBase64.isNotEmpty) {
+      try {
+        return Image.memory(
+          base64Decode(imageBase64),
+          height: 200,
+          width: double.infinity,
+          fit: BoxFit.cover,
+          errorBuilder: (context, error, stackTrace) =>
+              _buildRecipeImagePlaceholder(),
+        );
+      } catch (_) {
+        return _buildRecipeImagePlaceholder();
+      }
+    }
+
+    if (image.isNotEmpty) {
+      return Image.network(
+        image,
+        height: 200,
+        width: double.infinity,
+        fit: BoxFit.cover,
+        errorBuilder: (context, error, stackTrace) =>
+            _buildRecipeImagePlaceholder(),
+      );
+    }
+
+    return _buildRecipeImagePlaceholder();
+  }
+
+  Widget _buildRecipeImagePlaceholder() {
+    return Container(
+      height: 200,
+      width: double.infinity,
+      color: const Color(0xFFE8F3EF),
+      child: const Icon(Icons.restaurant, color: Color(0xFF34A853), size: 42),
     );
   }
 
@@ -1390,10 +1573,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ? e.userMessage
             : const FoodScanException.unavailable().userMessage;
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(message),
-            backgroundColor: Colors.redAccent,
-          ),
+          SnackBar(content: Text(message), backgroundColor: Colors.redAccent),
         );
       }
     }
@@ -1433,11 +1613,15 @@ class _HomeScreenState extends State<HomeScreen> {
 
 class _Recipe {
   const _Recipe({
+    this.id = '',
     required this.image,
+    this.imageBase64,
     required this.title,
     required this.description,
     required this.tags,
     required this.category,
+    this.ingredients = const [],
+    this.steps = '',
     required this.authorName,
     required this.authorImage,
     this.rating,
@@ -1445,11 +1629,15 @@ class _Recipe {
     this.level = 'Beginner',
   });
 
+  final String id;
   final String image;
+  final String? imageBase64;
   final String title;
   final String description;
   final List<String> tags;
   final String category;
+  final List<String> ingredients;
+  final String steps;
   final String authorName;
   final String authorImage;
   final String? rating;

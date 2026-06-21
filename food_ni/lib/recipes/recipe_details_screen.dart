@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -65,7 +67,9 @@ class RecipeDetailsScreen extends StatelessWidget {
       backgroundColor: _darkGreen,
       iconTheme: const IconThemeData(color: Colors.white),
       flexibleSpace: FlexibleSpaceBar(
-        background: recipe.imageUrl.isNotEmpty
+        background: recipe.imageBase64 != null && recipe.imageBase64!.isNotEmpty
+            ? _buildBase64Image(recipe.imageBase64!)
+            : recipe.imageUrl.isNotEmpty
             ? Image.network(
                 recipe.imageUrl,
                 fit: BoxFit.cover,
@@ -74,6 +78,18 @@ class RecipeDetailsScreen extends StatelessWidget {
             : _imagePlaceholder(),
       ),
     );
+  }
+
+  Widget _buildBase64Image(String imageBase64) {
+    try {
+      return Image.memory(
+        base64Decode(imageBase64),
+        fit: BoxFit.cover,
+        errorBuilder: (_, _, _) => _imagePlaceholder(),
+      );
+    } catch (_) {
+      return _imagePlaceholder();
+    }
   }
 
   Widget _imagePlaceholder() {
@@ -233,7 +249,9 @@ class RecipeDetailsScreen extends StatelessWidget {
     final normIng = recipeIngredient.trim().toLowerCase();
     for (final item in items) {
       final normItem = item.name.trim().toLowerCase();
-      if (normIng == normItem || normIng.contains(normItem) || normItem.contains(normIng)) {
+      if (normIng == normItem ||
+          normIng.contains(normItem) ||
+          normItem.contains(normIng)) {
         return true;
       }
     }
@@ -280,7 +298,9 @@ class RecipeDetailsScreen extends StatelessWidget {
           child: Row(
             children: [
               Icon(
-                missing.isEmpty ? Icons.check_circle : Icons.shopping_cart_outlined,
+                missing.isEmpty
+                    ? Icons.check_circle
+                    : Icons.shopping_cart_outlined,
                 color: missing.isEmpty ? _accentGreen : const Color(0xFFE28743),
                 size: 20,
               ),
@@ -293,7 +313,9 @@ class RecipeDetailsScreen extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.bold,
-                    color: missing.isEmpty ? _darkGreen : const Color(0xFF052A1E),
+                    color: missing.isEmpty
+                        ? _darkGreen
+                        : const Color(0xFF052A1E),
                   ),
                 ),
               ),
@@ -311,7 +333,9 @@ class RecipeDetailsScreen extends StatelessWidget {
             return Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               decoration: BoxDecoration(
-                color: hasIt ? const Color(0xFFE8F3EF) : const Color(0xFFFEEBEE).withValues(alpha: 0.5),
+                color: hasIt
+                    ? const Color(0xFFE8F3EF)
+                    : const Color(0xFFFEEBEE).withValues(alpha: 0.5),
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(
                   color: hasIt
@@ -331,7 +355,9 @@ class RecipeDetailsScreen extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(
-                    hasIt ? Icons.check_box_outlined : Icons.add_shopping_cart_outlined,
+                    hasIt
+                        ? Icons.check_box_outlined
+                        : Icons.add_shopping_cart_outlined,
                     size: 16,
                     color: hasIt ? _accentGreen : Colors.red.shade400,
                   ),
@@ -462,25 +488,34 @@ class _SourceBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     final isFirebase = source == 'firebase';
     final isAi = source == 'ai';
+    final isCommunity = source == 'community';
     final color = isFirebase
         ? const Color(0xFF34A853)
         : isAi
         ? Colors.purple
+        : isCommunity
+        ? const Color(0xFF34A853)
         : Colors.grey.shade600;
     final background = isFirebase
         ? const Color(0xFFE8F3EF)
         : isAi
         ? const Color(0xFFF3E5F5)
+        : isCommunity
+        ? const Color(0xFFE8F3EF)
         : const Color(0xFFF0F0F0);
-    final label = isFirebase ? 'FoodNi' : isAi ? 'AI Generated' : 'External';
+    final label = isFirebase
+        ? 'FoodNi'
+        : isAi
+        ? 'AI Generated'
+        : isCommunity
+        ? 'Community'
+        : 'External';
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
         color: background,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: color.withValues(alpha: 0.35),
-        ),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,

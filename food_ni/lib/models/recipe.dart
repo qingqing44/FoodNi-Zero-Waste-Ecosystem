@@ -10,6 +10,7 @@ class Recipe {
     required this.preparationTime,
     required this.difficulty,
     required this.source,
+    this.imageBase64,
     this.matchPercentage = 0.0,
     this.wasteReductionScore = 0.0,
     this.expiringIngredientsUsed = const [],
@@ -22,6 +23,9 @@ class Recipe {
 
   /// Network URL for the recipe's cover image. May be empty.
   final String imageUrl;
+
+  /// Optional base64 image used by community uploads stored in Firestore.
+  final String? imageBase64;
 
   /// List of ingredient names, e.g. ["egg", "tomato", "onion"].
   final List<String> ingredients;
@@ -55,14 +59,18 @@ class Recipe {
       id: id.isNotEmpty ? id : (json['id'] as String? ?? ''),
       title: json['title'] as String? ?? '',
       imageUrl: json['imageUrl'] as String? ?? '',
+      imageBase64: json['imageBase64'] as String?,
       ingredients: _parseStringList(json['ingredients']),
       instructions: _parseStringList(json['instructions']),
       preparationTime: (json['preparationTime'] as num?)?.toInt() ?? 0,
       difficulty: json['difficulty'] as String? ?? 'Unknown',
       source: json['source'] as String? ?? 'firebase',
       matchPercentage: (json['matchPercentage'] as num?)?.toDouble() ?? 0.0,
-      wasteReductionScore: (json['wasteReductionScore'] as num?)?.toDouble() ?? 0.0,
-      expiringIngredientsUsed: _parseStringList(json['expiringIngredientsUsed']),
+      wasteReductionScore:
+          (json['wasteReductionScore'] as num?)?.toDouble() ?? 0.0,
+      expiringIngredientsUsed: _parseStringList(
+        json['expiringIngredientsUsed'],
+      ),
     );
   }
 
@@ -72,6 +80,7 @@ class Recipe {
     'id': id,
     'title': title,
     'imageUrl': imageUrl,
+    'imageBase64': imageBase64,
     'ingredients': ingredients,
     'instructions': instructions,
     'preparationTime': preparationTime,
@@ -107,6 +116,7 @@ class Recipe {
     int? preparationTime,
     String? difficulty,
     String? source,
+    String? imageBase64,
     double? matchPercentage,
     double? wasteReductionScore,
     List<String>? expiringIngredientsUsed,
@@ -120,9 +130,11 @@ class Recipe {
       preparationTime: preparationTime ?? this.preparationTime,
       difficulty: difficulty ?? this.difficulty,
       source: source ?? this.source,
+      imageBase64: imageBase64 ?? this.imageBase64,
       matchPercentage: matchPercentage ?? this.matchPercentage,
       wasteReductionScore: wasteReductionScore ?? this.wasteReductionScore,
-      expiringIngredientsUsed: expiringIngredientsUsed ?? this.expiringIngredientsUsed,
+      expiringIngredientsUsed:
+          expiringIngredientsUsed ?? this.expiringIngredientsUsed,
     );
   }
 
