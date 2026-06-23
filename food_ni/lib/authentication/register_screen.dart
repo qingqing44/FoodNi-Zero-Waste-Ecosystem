@@ -1,4 +1,5 @@
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -58,6 +59,24 @@ class _RegisterScreenState extends State<RegisterScreen> {
   bool _obscurePassword = true;
   bool _isLoading = false;
 
+  Future<void> _syncUserToFirestore(User? user, {String? displayNameOverride}) async {
+    if (user == null) return;
+    final docRef = FirebaseFirestore.instance.collection('users').doc(user.uid);
+    final doc = await docRef.get();
+    final Map<String, dynamic> data = {
+      'uid': user.uid,
+      'email': user.email ?? '',
+      'displayName': displayNameOverride ?? user.displayName ?? '',
+      'photoURL': user.photoURL ?? '',
+      'role': 'user',
+      'lastLogin': FieldValue.serverTimestamp(),
+    };
+    if (!doc.exists) {
+      data['createdAt'] = FieldValue.serverTimestamp();
+    }
+    await docRef.set(data, SetOptions(merge: true));
+  }
+
   Future<void> _register() async {
     if (_emailController.text.isEmpty || _passwordController.text.isEmpty || _nameController.text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -88,6 +107,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
       ).timeout(const Duration(seconds: 15));
       // Update display name
       await credential.user?.updateDisplayName(_nameController.text.trim()).timeout(const Duration(seconds: 10));
+      // Sync user to Firestore before signing out
+      await _syncUserToFirestore(credential.user, displayNameOverride: _nameController.text.trim());
       
       // Sign out immediately so user has to login manually
       await FirebaseAuth.instance.signOut();
@@ -99,13 +120,17 @@ class _RegisterScreenState extends State<RegisterScreen> {
         Navigator.of(context).pop(); // Back to login screen
       }
     } on FirebaseAuthException catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.message ?? 'Registration failed')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.message ?? 'Registration failed')),
+        );
+      }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Connection timed out or network error. Please check your internet. ($e)')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Connection timed out or network error. Please check your internet. ($e)')),
+        );
+      }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -118,7 +143,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
         // Force account selection on Web
         GoogleAuthProvider googleProvider = GoogleAuthProvider();
         googleProvider.setCustomParameters({'prompt': 'select_account'});
-        await FirebaseAuth.instance.signInWithPopup(googleProvider);
+        final userCredential = await FirebaseAuth.instance.signInWithPopup(googleProvider);
+        await _syncUserToFirestore(userCredential.user);
       } else {
         // Force account selection on Mobile
         final GoogleSignIn googleSignIn = GoogleSignIn(
@@ -139,7 +165,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
           idToken: googleAuth.idToken,
         );
 
-        await FirebaseAuth.instance.signInWithCredential(credential).timeout(const Duration(seconds: 15));
+        final userCredential = await FirebaseAuth.instance.signInWithCredential(credential).timeout(const Duration(seconds: 15));
+        await _syncUserToFirestore(userCredential.user);
       }
 
       // After successful Google sign-up, sign out to match the email flow
@@ -152,9 +179,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
         Navigator.of(context).pop(); // Back to login screen
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Google Sign-Up failed: $e')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Google Sign-Up failed: $e')),
+        );
+      }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }

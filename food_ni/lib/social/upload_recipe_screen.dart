@@ -14,6 +14,13 @@ class UploadRecipeScreen extends StatefulWidget {
 }
 
 class _UploadRecipeScreenState extends State<UploadRecipeScreen> {
+  static const _categories = [
+    'All Recipes',
+    'Zero Waste',
+    'Quick & Easy',
+    'Pantry Staples',
+  ];
+
   final _formKey = GlobalKey<FormState>();
   final _titleController = TextEditingController();
   final _descriptionController = TextEditingController();
@@ -27,6 +34,7 @@ class _UploadRecipeScreenState extends State<UploadRecipeScreen> {
   Uint8List? _imageBytes;
   String? _imageBase64;
   bool _isSaving = false;
+  String _selectedCategory = 'All Recipes';
 
   @override
   void dispose() {
@@ -179,6 +187,11 @@ class _UploadRecipeScreenState extends State<UploadRecipeScreen> {
 
     setState(() => _isSaving = true);
 
+    final tags = <String>['Community'];
+    if (_selectedCategory != 'All Recipes') {
+      tags.add(_selectedCategory);
+    }
+
     try {
       await FirebaseFirestore.instance.collection('recipes').add({
         'userId': user.uid,
@@ -189,12 +202,18 @@ class _UploadRecipeScreenState extends State<UploadRecipeScreen> {
         'steps': steps,
         'cookingTime': _cookingTimeController.text.trim(),
         'imageBase64': _imageBase64,
+        'category': _selectedCategory,
+        'tags': tags,
         'createdAt': FieldValue.serverTimestamp(),
+        'status': 'pending',
       });
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Recipe uploaded successfully')),
+        const SnackBar(
+          content: Text('Recipe submitted for review! It will appear once approved.'),
+          duration: Duration(seconds: 4),
+        ),
       );
       Navigator.pop(context);
     } catch (e) {
@@ -261,6 +280,8 @@ class _UploadRecipeScreenState extends State<UploadRecipeScreen> {
                   label: 'Cooking Time',
                   hintText: 'e.g. 30 mins',
                 ),
+                const SizedBox(height: 16),
+                _buildCategorySelector(),
                 const SizedBox(height: 28),
                 SizedBox(
                   width: double.infinity,
@@ -373,6 +394,54 @@ class _UploadRecipeScreenState extends State<UploadRecipeScreen> {
                 ],
               ),
       ),
+    );
+  }
+
+  Widget _buildCategorySelector() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Category',
+          style: TextStyle(
+            color: Color(0xFF052A1E),
+            fontWeight: FontWeight.bold,
+            fontSize: 14,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: _categories.map((category) {
+            final isSelected = _selectedCategory == category;
+            return GestureDetector(
+              onTap: () => setState(() => _selectedCategory = category),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                decoration: BoxDecoration(
+                  color: isSelected ? const Color(0xFF052A1E) : Colors.white,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: isSelected
+                        ? Colors.transparent
+                        : const Color(0xFFE0E0E0),
+                  ),
+                ),
+                child: Text(
+                  category,
+                  style: TextStyle(
+                    color: isSelected ? Colors.white : const Color(0xFF052A1E),
+                    fontSize: 12,
+                    fontWeight:
+                        isSelected ? FontWeight.bold : FontWeight.normal,
+                  ),
+                ),
+              ),
+            );
+          }).toList(),
+        ),
+      ],
     );
   }
 

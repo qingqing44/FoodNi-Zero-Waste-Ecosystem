@@ -39,65 +39,13 @@ class _HomeScreenState extends State<HomeScreen> {
   // ── Profile avatar state ──────────────────────────────────────────────────
   String? _localAvatarUrl;
 
-  static const List<_Recipe> _recipes = [
-    _Recipe(
-      image:
-          'https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&q=80&w=800',
-      title: 'Sustainable Harvest Buddha Bowl',
-      description:
-          'Transform leftover grains and wilting greens into a powerhouse nutritional meal with this signature dressing.',
-      rating: '4.9(124)',
-      tags: ['Zero Waste', 'High Fiber'],
-      category: 'Zero Waste',
-      authorName: 'Marcus C.',
-      authorImage:
-          'https://ui-avatars.com/api/?name=Marcus+C&background=random',
-      time: '20 min',
-      level: 'Beginner',
-    ),
-    _Recipe(
-      image:
-          'https://images.unsplash.com/photo-1473093226795-af9932fe5856?auto=format&fit=crop&q=80&w=800',
-      title: '10-Min Pantry Pasta',
-      description:
-          'The ultimate lazy Sunday meal using only shelf-stable ingredients from your FoodNi inventory.',
-      tags: ['Quick & Easy'],
-      category: 'Quick & Easy',
-      authorName: 'Maya R.',
-      authorImage: 'https://ui-avatars.com/api/?name=Maya+R&background=random',
-    ),
-    _Recipe(
-      image:
-          'https://images.unsplash.com/photo-1606890737304-57a1ca8a5b62?auto=format&fit=crop&q=80&w=800',
-      title: 'Dark Choco Lava Cake',
-      description:
-          'A sustainable twist using fair-trade cocoa and seasonal berry compote.',
-      tags: ['Indulgent'],
-      category: 'All Recipes',
-      authorName: 'Alex K.',
-      authorImage: 'https://ui-avatars.com/api/?name=Alex+K&background=random',
-    ),
-    _Recipe(
-      image:
-          'https://images.unsplash.com/photo-1505576399279-565b52d4ac71?auto=format&fit=crop&q=80&w=800',
-      title: 'Pantry Mezze Board',
-      description:
-          'Elevate canned chickpeas and olives into an artisan appetizer spread.',
-      tags: ['Party Hit'],
-      category: 'Pantry Staples',
-      authorName: 'Lela J.',
-      authorImage: 'https://ui-avatars.com/api/?name=Lela+J&background=random',
-    ),
-  ];
-
   bool get _hasActiveFilters =>
       _searchQuery.trim().isNotEmpty || _selectedCategory != 'All Recipes';
 
   List<_Recipe> _filteredRecipes(List<_Recipe> uploadedRecipes) {
     final query = _searchQuery.trim().toLowerCase();
-    final recipes = [...uploadedRecipes, ..._recipes];
 
-    return recipes.where((recipe) {
+    return uploadedRecipes.where((recipe) {
       final matchesSearch =
           query.isEmpty ||
           recipe.title.toLowerCase().contains(query) ||
@@ -113,24 +61,50 @@ class _HomeScreenState extends State<HomeScreen> {
     }).toList();
   }
 
+  static bool _isApprovedCommunityRecipe(Map<String, dynamic> data) {
+    final status = (data['status'] as String?)?.trim().toLowerCase();
+    return status == 'approved';
+  }
+
+  static int _compareRecipeDocsByCreatedAt(
+    QueryDocumentSnapshot a,
+    QueryDocumentSnapshot b,
+  ) {
+    final aTs = (a.data() as Map<String, dynamic>)['createdAt'] as Timestamp?;
+    final bTs = (b.data() as Map<String, dynamic>)['createdAt'] as Timestamp?;
+    if (aTs == null && bTs == null) return 0;
+    if (aTs == null) return 1;
+    if (bTs == null) return -1;
+    return bTs.compareTo(aTs);
+  }
+
   List<_Recipe> _uploadedRecipesFromSnapshot(QuerySnapshot? snapshot) {
     if (snapshot == null) return const [];
 
-    return snapshot.docs.map((doc) {
+    final docs = snapshot.docs
+        .where((doc) {
+          final data = doc.data() as Map<String, dynamic>? ?? {};
+          return _isApprovedCommunityRecipe(data);
+        })
+        .toList()
+      ..sort(_compareRecipeDocsByCreatedAt);
+
+    return docs.map((doc) {
       final data = doc.data() as Map<String, dynamic>? ?? {};
       final authorName = (data['authorName'] as String?)?.trim();
       final cookingTime = (data['cookingTime'] as String?)?.trim();
+      final parsedTags = _parseStringList(data['tags']);
 
       return _Recipe(
         id: doc.id,
-        image: '',
+        image: (data['imageUrl'] as String?)?.trim() ?? '',
         imageBase64: data['imageBase64'] as String?,
         title: (data['title'] as String?)?.trim().isNotEmpty == true
             ? (data['title'] as String).trim()
             : 'Untitled Recipe',
         description: (data['description'] as String?)?.trim() ?? '',
-        tags: const ['Community'],
-        category: 'All Recipes',
+        tags: parsedTags.isNotEmpty ? parsedTags : const ['Community'],
+        category: (data['category'] as String?)?.trim() ?? 'All Recipes',
         ingredients: _parseStringList(data['ingredients']),
         steps: (data['steps'] as String?)?.trim() ?? '',
         authorName: authorName != null && authorName.isNotEmpty
@@ -384,9 +358,35 @@ class _HomeScreenState extends State<HomeScreen> {
                     StreamBuilder<QuerySnapshot>(
                       stream: FirebaseFirestore.instance
                           .collection('recipes')
-                          .orderBy('createdAt', descending: true)
                           .snapshots(),
                       builder: (context, snapshot) {
+                        if (snapshot.connectionState ==
+                            ConnectionState.waiting) {
+                          return const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 32),
+                            child: Center(
+                              child: CircularProgressIndicator(
+                                color: Color(0xFF34A853),
+                              ),
+                            ),
+                          );
+                        }
+
+                        if (snapshot.hasError) {
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 32),
+                            child: Text(
+                              'Community recipes could not be loaded. '
+                              'Pull to refresh or try again later.',
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                color: Color(0xFF666666),
+                                fontSize: 13,
+                              ),
+                            ),
+                          );
+                        }
+
                         final uploadedRecipes = _uploadedRecipesFromSnapshot(
                           snapshot.data,
                         );
@@ -394,20 +394,10 @@ class _HomeScreenState extends State<HomeScreen> {
 
                         return Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            if (snapshot.hasError)
-                              const Padding(
-                                padding: EdgeInsets.only(bottom: 16),
-                                child: Text(
-                                  'Uploaded recipes could not be loaded.',
-                                  style: TextStyle(
-                                    color: Color(0xFF666666),
-                                    fontSize: 13,
-                                  ),
-                                ),
-                              ),
-                            ..._buildRecipeFeed(recipes),
-                          ],
+                          children: _buildRecipeFeed(
+                            recipes,
+                            approvedCount: uploadedRecipes.length,
+                          ),
                         );
                       },
                     ),
@@ -819,15 +809,41 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // ── Social feed ───────────────────────────────────────────────────────────
 
-  List<Widget> _buildRecipeFeed(List<_Recipe> recipes) {
+  List<Widget> _buildRecipeFeed(
+    List<_Recipe> recipes, {
+    required int approvedCount,
+  }) {
     if (recipes.isEmpty) {
+      final hasApprovedRecipes = approvedCount > 0;
+      final message = hasApprovedRecipes && _hasActiveFilters
+          ? 'No community recipes match your search or filters.'
+          : hasApprovedRecipes
+          ? 'No community recipes to show right now.'
+          : 'No approved community recipes yet. Upload one and check back after review.';
+
       return [
-        const Center(
+        Center(
           child: Padding(
-            padding: EdgeInsets.symmetric(vertical: 32),
-            child: Text(
-              'No recipes found',
-              style: TextStyle(color: Color(0xFF666666), fontSize: 15),
+            padding: const EdgeInsets.symmetric(vertical: 32),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  message,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Color(0xFF666666),
+                    fontSize: 15,
+                  ),
+                ),
+                if (hasApprovedRecipes && _hasActiveFilters) ...[
+                  const SizedBox(height: 12),
+                  TextButton(
+                    onPressed: _resetRecipeFilters,
+                    child: const Text('Clear search and filters'),
+                  ),
+                ],
+              ],
             ),
           ),
         ),
@@ -837,9 +853,12 @@ class _HomeScreenState extends State<HomeScreen> {
     final widgets = <Widget>[];
     for (var i = 0; i < recipes.length; i++) {
       if (!_hasActiveFilters && i == 3) {
-        widgets.add(_buildZeroWasteCard());
-        widgets.add(const SizedBox(height: 24));
         widgets.add(_buildSocialStatsCard());
+        widgets.add(const SizedBox(height: 24));
+      }
+
+      if (!_hasActiveFilters && i == 3) {
+        widgets.add(_buildZeroWasteCard());
         widgets.add(const SizedBox(height: 24));
       }
 
@@ -850,7 +869,6 @@ class _HomeScreenState extends State<HomeScreen> {
           imageBase64: recipe.imageBase64,
           title: recipe.title,
           description: recipe.description,
-          rating: recipe.rating,
           tags: recipe.tags,
           authorName: recipe.authorName,
           authorImage: recipe.authorImage,
@@ -878,7 +896,185 @@ class _HomeScreenState extends State<HomeScreen> {
     return null;
   }
 
+  void _showNotificationsSheet() {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => DraggableScrollableSheet(
+        initialChildSize: 0.55,
+        maxChildSize: 0.9,
+        minChildSize: 0.3,
+        expand: false,
+        builder: (_, scrollController) => Column(
+          children: [
+            const SizedBox(height: 8),
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey.shade300,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 12),
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 20),
+              child: Row(
+                children: [
+                  Icon(Icons.notifications, color: Color(0xFF052A1E)),
+                  SizedBox(width: 8),
+                  Text(
+                    'Notifications',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF052A1E),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Divider(height: 1),
+            Expanded(
+              child: StreamBuilder<QuerySnapshot>(
+                stream: FirebaseFirestore.instance
+                    .collection('notifications')
+                    .where('userId', isEqualTo: uid)
+                    .where('read', isEqualTo: false)
+                    .snapshots(),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(
+                        child: CircularProgressIndicator(
+                            color: Color(0xFF34A853)));
+                  }
+                  final docs = (snapshot.data?.docs ?? [])
+                    ..sort((a, b) {
+                      final aTs =
+                          (a.data() as Map)['createdAt'] as Timestamp?;
+                      final bTs =
+                          (b.data() as Map)['createdAt'] as Timestamp?;
+                      if (aTs == null && bTs == null) return 0;
+                      if (aTs == null) return 1;
+                      if (bTs == null) return -1;
+                      return bTs.compareTo(aTs);
+                    });
+                  if (docs.isEmpty) {
+                    return Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.notifications_none,
+                              size: 48, color: Colors.grey.shade300),
+                          const SizedBox(height: 12),
+                          Text(
+                            'No unread notifications',
+                            style: TextStyle(
+                                color: Colors.grey.shade500, fontSize: 14),
+                          ),
+                        ],
+                      ),
+                    );
+                  }
+                  return ListView.separated(
+                    controller: scrollController,
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    itemCount: docs.length,
+                    separatorBuilder: (_, _) =>
+                        const Divider(height: 1, indent: 72),
+                    itemBuilder: (context, index) {
+                      final doc = docs[index];
+                      final data =
+                          doc.data() as Map<String, dynamic>;
+                      final type = (data['type'] as String?) ?? '';
+                      final title = (data['title'] as String?) ?? '';
+                      final message = (data['message'] as String?) ?? '';
+                      final createdAt =
+                          data['createdAt'] as Timestamp?;
+                      final isFlag = type == 'flag';
+
+                      return ListTile(
+                        leading: CircleAvatar(
+                          backgroundColor: isFlag
+                              ? Colors.orange.shade100
+                              : Colors.blue.shade100,
+                          child: Icon(
+                            isFlag
+                                ? Icons.warning_amber_rounded
+                                : Icons.notifications_active,
+                            color:
+                                isFlag ? Colors.orange : Colors.blue,
+                            size: 20,
+                          ),
+                        ),
+                        title: Text(
+                          title,
+                          style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 14,
+                              color: Color(0xFF052A1E)),
+                        ),
+                        subtitle: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const SizedBox(height: 2),
+                            Text(
+                              message,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                  fontSize: 12,
+                                  color: Color(0xFF666666)),
+                            ),
+                            if (createdAt != null) ...[
+                              const SizedBox(height: 2),
+                              Text(
+                                _relativeTime(createdAt.toDate()),
+                                style: TextStyle(
+                                    fontSize: 11,
+                                    color: Colors.grey.shade400),
+                              ),
+                            ],
+                          ],
+                        ),
+                        isThreeLine: true,
+                        onTap: () {
+                          FirebaseFirestore.instance
+                              .collection('notifications')
+                              .doc(doc.id)
+                              .update({'read': true});
+                        },
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  static String _relativeTime(DateTime dt) {
+    final diff = DateTime.now().difference(dt);
+    if (diff.inMinutes < 1) return 'Just now';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+    if (diff.inHours < 24) return '${diff.inHours}h ago';
+    if (diff.inDays < 7) return '${diff.inDays}d ago';
+    return '${dt.day}/${dt.month}/${dt.year}';
+  }
+
   Widget _buildAppBar(BuildContext context) {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
       child: Row(
@@ -895,6 +1091,44 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           Row(
             children: [
+              // Notification bell with live unread badge
+              StreamBuilder<QuerySnapshot>(
+                stream: uid == null
+                    ? const Stream.empty()
+                    : FirebaseFirestore.instance
+                        .collection('notifications')
+                        .where('userId', isEqualTo: uid)
+                        .where('read', isEqualTo: false)
+                        .snapshots(),
+                builder: (context, snapshot) {
+                  final hasUnread =
+                      (snapshot.data?.docs.isNotEmpty) ?? false;
+                  return Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      IconButton(
+                        tooltip: 'Notifications',
+                        onPressed: _showNotificationsSheet,
+                        icon: const Icon(Icons.notifications_none,
+                            color: Color(0xFF052A1E)),
+                      ),
+                      if (hasUnread)
+                        Positioned(
+                          right: 8,
+                          top: 8,
+                          child: Container(
+                            width: 8,
+                            height: 8,
+                            decoration: const BoxDecoration(
+                              color: Colors.red,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                        ),
+                    ],
+                  );
+                },
+              ),
               IconButton(
                 tooltip: 'Add Recipe',
                 onPressed: () {
@@ -1313,42 +1547,63 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildSocialStatsCard() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFFC8E6C9).withValues(alpha: 0.5),
-        borderRadius: BorderRadius.circular(24),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: const Icon(Icons.group, color: Color(0xFF052A1E)),
+    return FutureBuilder<AggregateQuerySnapshot>(
+      future: FirebaseFirestore.instance.collection('users').count().get(),
+      builder: (context, snapshot) {
+        final count = snapshot.data?.count ?? 0;
+        final label = count >= 1000
+            ? '${(count / 1000).toStringAsFixed(count % 1000 == 0 ? 0 : 1)}k'
+            : '$count';
+
+        return Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: const Color(0xFFC8E6C9).withValues(alpha: 0.5),
+            borderRadius: BorderRadius.circular(24),
           ),
-          const SizedBox(width: 16),
-          const Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          child: Row(
             children: [
-              Text(
-                '2.4k',
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFF052A1E),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
                 ),
+                child: const Icon(Icons.group, color: Color(0xFF052A1E)),
               ),
-              Text(
-                'Active Home Cooks',
-                style: TextStyle(color: Color(0xFF052A1E), fontSize: 12),
+              const SizedBox(width: 16),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  snapshot.connectionState == ConnectionState.waiting
+                      ? const SizedBox(
+                          width: 32,
+                          height: 24,
+                          child: Center(
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Color(0xFF052A1E),
+                            ),
+                          ),
+                        )
+                      : Text(
+                          label,
+                          style: const TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF052A1E),
+                          ),
+                        ),
+                  const Text(
+                    'Active Home Cooks',
+                    style: TextStyle(color: Color(0xFF052A1E), fontSize: 12),
+                  ),
+                ],
               ),
             ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -1624,7 +1879,6 @@ class _Recipe {
     this.steps = '',
     required this.authorName,
     required this.authorImage,
-    this.rating,
     this.time = '15 min',
     this.level = 'Beginner',
   });
@@ -1640,7 +1894,6 @@ class _Recipe {
   final String steps;
   final String authorName;
   final String authorImage;
-  final String? rating;
   final String time;
   final String level;
 }

@@ -1,4 +1,5 @@
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform, TargetPlatform;
@@ -58,6 +59,24 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _obscurePassword = true;
   bool _isLoading = false;
 
+  Future<void> _syncUserToFirestore(User? user) async {
+    if (user == null) return;
+    final docRef = FirebaseFirestore.instance.collection('users').doc(user.uid);
+    final doc = await docRef.get();
+    final Map<String, dynamic> data = {
+      'uid': user.uid,
+      'email': user.email ?? '',
+      'displayName': user.displayName ?? '',
+      'photoURL': user.photoURL ?? '',
+      'role': 'user',
+      'lastLogin': FieldValue.serverTimestamp(),
+    };
+    if (!doc.exists) {
+      data['createdAt'] = FieldValue.serverTimestamp();
+    }
+    await docRef.set(data, SetOptions(merge: true));
+  }
+
   Future<void> _login() async {
     if (_emailController.text.isEmpty || _passwordController.text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -68,18 +87,27 @@ class _LoginScreenState extends State<LoginScreen> {
 
     setState(() => _isLoading = true);
     try {
-      await FirebaseAuth.instance.signInWithEmailAndPassword(
+      final userCredential = await FirebaseAuth.instance.signInWithEmailAndPassword(
         email: _emailController.text.trim(),
         password: _passwordController.text.trim(),
       ).timeout(const Duration(seconds: 15));
+      // Sync is non-critical: if it fails the user is still authenticated and
+      // AuthGate's authStateChanges() stream will redirect to HomeScreen.
+      try {
+        await _syncUserToFirestore(userCredential.user);
+      } catch (_) {}
     } on FirebaseAuthException catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.message ?? 'Login failed')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.message ?? 'Login failed')),
+        );
+      }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Connection timed out or network error. Please check your internet. ($e)')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Connection timed out or network error. Please check your internet. ($e)')),
+        );
+      }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -122,14 +150,14 @@ class _LoginScreenState extends State<LoginScreen> {
               if (email.isEmpty) return;
               try {
                 await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
-                if (mounted) {
+                if (context.mounted) {
                   Navigator.pop(context);
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('Reset link sent! Check your email.')),
                   );
                 }
               } catch (e) {
-                if (mounted) {
+                if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(content: Text('Error: $e')),
                   );
@@ -154,7 +182,10 @@ class _LoginScreenState extends State<LoginScreen> {
       if (kIsWeb) {
         GoogleAuthProvider googleProvider = GoogleAuthProvider();
         googleProvider.setCustomParameters({'prompt': 'select_account'});
-        await FirebaseAuth.instance.signInWithPopup(googleProvider);
+        final userCredential = await FirebaseAuth.instance.signInWithPopup(googleProvider);
+        try {
+          await _syncUserToFirestore(userCredential.user);
+        } catch (_) {}
       } else {
         final GoogleSignIn googleSignIn = defaultTargetPlatform == TargetPlatform.android
             ? GoogleSignIn()
@@ -173,12 +204,17 @@ class _LoginScreenState extends State<LoginScreen> {
           idToken: googleAuth.idToken,
         );
 
-        await FirebaseAuth.instance.signInWithCredential(credential).timeout(const Duration(seconds: 15));
+        final userCredential = await FirebaseAuth.instance.signInWithCredential(credential).timeout(const Duration(seconds: 15));
+        try {
+          await _syncUserToFirestore(userCredential.user);
+        } catch (_) {}
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Google Sign-In failed: $e')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Google Sign-In failed: $e')),
+        );
+      }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
